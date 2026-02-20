@@ -66,3 +66,7 @@ artifacts/
 
 # Exported notebooks / reports
 notebooks/*.html
+
+# Generated plot files from notebooks (not versioned)
+betavae_*.png
+

@@ -1,0 +1,2 @@
+# Pegá acá el comando exacto que usaste para entrenar (ADNI) y/o inferencia.
+# Incluí output_dir, channels_to_use, epochs, seed, etc.

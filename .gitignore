@@ -59,3 +59,7 @@ data/**
 *.nii
 *.nii.gz
 EOF
+
+# Local artifacts
+artifacts/
+

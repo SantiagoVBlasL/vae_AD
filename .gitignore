@@ -63,3 +63,6 @@ EOF
 # Local artifacts
 artifacts/
 
+
+# Exported notebooks / reports
+notebooks/*.html

@@ -1,0 +1,61 @@
+cat > .gitignore <<'EOF'
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+*.egg-info/
+.eggs/
+dist/
+build/
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log
+logs/
+wandb/
+mlruns/
+
+# Results / artifacts (NO versionar)
+results/**
+!results/README.md
+!results/.gitkeep
+
+# Data (NO versionar tensores pesados)
+data/**
+!data/README.md
+!data/.gitkeep
+!data/*.csv
+!data/*.tsv
+!data/*.txt
+!data/*.json
+!data/*.yml
+!data/*.yaml
+
+# Big binaries common in ML
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.npz
+*.npy
+*.pkl
+*.joblib
+*.h5
+*.hdf5
+*.nii
+*.nii.gz
+EOF

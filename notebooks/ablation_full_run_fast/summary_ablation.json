@@ -1,0 +1,93 @@
+{
+  "timestamp": "2026-02-22T22:17:58",
+  "elapsed_seconds": 7937.5,
+  "opt_metric": "auc",
+  "min_improvement": 0.001,
+  "n_candidate_channels": 7,
+  "candidate_channels": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "config": {
+    "outer_folds": 3,
+    "repeats": 1,
+    "epochs_vae": 300,
+    "early_stop": 20,
+    "beta_cycles": 4,
+    "cyclical_beta_ratio": 0.4,
+    "lr_sched_type": "cosine_warm",
+    "lr_sched_T0": 30,
+    "lr_sched_eta_min": 5e-07,
+    "batch_size": 64,
+    "beta_vae": 4.6,
+    "dropout_vae": 0.2,
+    "latent_dim": 128,
+    "norm_mode": "zscore_offdiag",
+    "vae_val_split_ratio": 0.2,
+    "num_workers": 4,
+    "seed": 42,
+    "classifier_use_class_weight": false,
+    "save_fold_artefacts": false,
+    "save_vae_training_history": false
+  },
+  "parity_flags": {
+    "vae_final_activation": "tanh",
+    "metadata_features": [
+      "Age",
+      "Sex"
+    ],
+    "classifier": "logreg",
+    "clf_no_tune": true,
+    "use_smote": false
+  },
+  "best": {
+    "channels": [
+      1,
+      2
+    ],
+    "channel_names": [
+      "Pearson_Full_FisherZ_Signed",
+      "MI_KNN_Symmetric"
+    ],
+    "metric_mean": 0.7793524440736621,
+    "metric_std": 0.06193014163798223,
+    "out_dir": "ablation_full_run_fast/step1_add2_k2"
+  },
+  "greedy_path": [
+    {
+      "step": 0,
+      "channels": [
+        1
+      ],
+      "metric_mean": 0.7554597701149426,
+      "metric_std": 0.04089537064271806,
+      "delta": null
+    },
+    {
+      "step": 1,
+      "channels": [
+        1,
+        2
+      ],
+      "metric_mean": 0.7793524440736621,
+      "metric_std": 0.06193014163798223,
+      "delta": 0.023893
+    },
+    {
+      "step": 2,
+      "channels": [
+        1,
+        2,
+        0
+      ],
+      "metric_mean": 0.7711195309603264,
+      "metric_std": 0.03873288724384262,
+      "delta": -0.008233
+    }
+  ]
+}

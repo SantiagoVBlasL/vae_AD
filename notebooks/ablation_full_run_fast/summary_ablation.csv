@@ -1,0 +1,4 @@
+step,n_channels,channels_indices,channels_pretty,metric,metric_mean,metric_std,delta_vs_prev,cached,out_dir,metrics_csv
+0,1,1,[1:Pearson_Full_FisherZ_Signed],auc,0.755460,0.040895,,False,ablation_full_run_fast/single_ch1,ablation_full_run_fast/single_ch1/all_folds_metrics_MULTI_logreg_notune_vaeconvtranspose4l_ld128_beta4.6_normzscore_offdiag_ch1sel_outer3x1.csv
+1,2,1 2,"[1:Pearson_Full_FisherZ_Signed, 2:MI_KNN_Symmetric]",auc,0.779352,0.061930,+0.023893,False,ablation_full_run_fast/step1_add2_k2,ablation_full_run_fast/step1_add2_k2/all_folds_metrics_MULTI_logreg_notune_vaeconvtranspose4l_ld128_beta4.6_normzscore_offdiag_ch2sel_outer3x1.csv
+2,3,1 2 0,"[1:Pearson_Full_FisherZ_Signed, 2:MI_KNN_Symmetric, 0:Pearson_OMST_GCE_Signed_Weighted]",auc,0.771120,0.038733,-0.008233,False,ablation_full_run_fast/step2_add0_k3,ablation_full_run_fast/step2_add0_k3/all_folds_metrics_MULTI_logreg_notune_vaeconvtranspose4l_ld128_beta4.6_normzscore_offdiag_ch3sel_outer3x1.csv

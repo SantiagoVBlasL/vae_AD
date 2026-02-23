@@ -70,3 +70,4 @@ notebooks/*.html
 # Generated plot files from notebooks (not versioned)
 betavae_*.png
 
+notebooks/ablation_full_run_fast/*

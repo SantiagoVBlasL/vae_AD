@@ -232,6 +232,36 @@ def clean_state_dict(sd: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
     return {k.replace('_orig_mod.', ''): v for k, v in sd.items()}
 
 
+def _resolve_pipeline_path(fold_dir: Path, clf: str, fold: int) -> Path:
+    """Return the first existing classifier pipeline path, trying known naming variants.
+
+    Naming conventions produced by run_vae_clf_ad_inference.py:
+      classifier_{clf}_raw_pipeline_fold_{fold}.joblib       <- unfitted scaler only
+      classifier_{clf}_final_pipeline_fold_{fold}.joblib     <- CalibratedCV wrapper
+      classifier_{clf}_calibrated_pipeline_fold_{fold}.joblib
+      classifier_{clf}_pipeline_fold_{fold}.joblib            <- legacy plain name
+
+    For SHAP we prefer 'raw' (plain Pipeline with named_steps and unfitted model)
+    so that feature names and preprocessing are accessible.  If only calibrated
+    variants exist, the code will fall back to black-box SHAP automatically
+    (is_pipeline detection inside cmd_shap).
+    """
+    suffixes = ["raw", "final", "calibrated", None]
+    for suf in suffixes:
+        name = (f"classifier_{clf}_{suf}_pipeline_fold_{fold}.joblib"
+                if suf else f"classifier_{clf}_pipeline_fold_{fold}.joblib")
+        p = fold_dir / name
+        if p.exists():
+            log.info(f"[pipeline] Using: {p.name}")
+            return p
+    tried = [f"classifier_{clf}_{s}_pipeline_fold_{fold}.joblib" for s in suffixes[:-1]]
+    tried.append(f"classifier_{clf}_pipeline_fold_{fold}.joblib")
+    raise FileNotFoundError(
+        f"No se encontró el pipeline del clasificador en {fold_dir}.\n"
+        f"Probadas: {tried}"
+    )
+
+
 def build_vae(vae_kwargs: Dict[str, Any], state_dict_path: Path, device: torch.device) -> ConvolutionalVAE:
     """Construye e inicializa un VAE con pesos entrenados."""
     vae = ConvolutionalVAE(**vae_kwargs).to(device)
@@ -379,9 +409,7 @@ def cmd_shap(args: argparse.Namespace) -> None:
     log.info(f"[SHAP] fold={args.fold} clf={args.clf}")
 
     # 1) Pipeline del clasificador (entrenado)
-    pipe_path = fold_dir / f"classifier_{args.clf}_pipeline_fold_{args.fold}.joblib"
-    if not pipe_path.exists():
-        raise FileNotFoundError(f"No se encontró el pipeline del clasificador: {pipe_path}")
+    pipe_path = _resolve_pipeline_path(fold_dir, args.clf, args.fold)
     pipe = joblib.load(pipe_path)
 
     # ------------------------------------------------------------
@@ -1271,9 +1299,7 @@ def cmd_saliency(args: argparse.Namespace) -> None:
     if saliency_mode == "ig_classifier_score":
         log.info("[SALIENCY] Mode: ig_classifier_score — using actual classifier weights.")
         # Need pipeline + feature_columns for this mode
-        pipe_path = fold_dir / f"classifier_{args.clf}_pipeline_fold_{args.fold}.joblib"
-        if not pipe_path.exists():
-            raise FileNotFoundError(f"Pipeline not found: {pipe_path}")
+        pipe_path = _resolve_pipeline_path(fold_dir, args.clf, args.fold)
         pipe = joblib.load(pipe_path)
         fc_path = fold_dir / "feature_columns.json"
         if fc_path.exists():
@@ -1738,9 +1764,7 @@ def cmd_shap_edges(args: argparse.Namespace) -> None:
              f"per_channel={use_per_channel} n_test_shap={n_test_shap}")
 
     # 1) Load fold artifacts --------------------------------------------------
-    pipe_path = fold_dir / f"classifier_{args.clf}_pipeline_fold_{args.fold}.joblib"
-    if not pipe_path.exists():
-        raise FileNotFoundError(f"Pipeline not found: {pipe_path}")
+    pipe_path = _resolve_pipeline_path(fold_dir, args.clf, args.fold)
     pipe = joblib.load(pipe_path)
 
     norm_params = joblib.load(fold_dir / "vae_norm_params.joblib")

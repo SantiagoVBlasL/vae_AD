@@ -60,6 +60,9 @@ data/**
 *.nii.gz
 EOF
 
+# 
+*.bak
+
 # Local artifacts
 artifacts/
 
@@ -71,3 +74,4 @@ notebooks/*.html
 betavae_*.png
 
 notebooks/ablation_full_run_fast/*
+*.bak

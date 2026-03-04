@@ -1,0 +1,215 @@
+SubjectID,ID,ResearchGroup,Grupo,Age,Sex,Altura,Peso,BMI,CategoríaCOVID,Recuperado,EQ-VAS,CategoriaFAS,NivelEducativo,Ocupacion,DiasEntrePrimeraInfeccionYCuestionario,DiasEntreUltimaInfeccionYCuestionario,MOCA,MOCA_perc
+333_S_0001,CP0001,CONTROL,CONTROL,34,F,163,70,26.35,No infectado,NaN,80,NO HAY FATIGA,Posgrado,Trabajando tiempo completo,NaN,NaN,30,1.4
+333_S_0002,CP0002,CONTROL,CONTROL,50,F,159,64,25.32,Paciente ambulatorio,completamente,100,NO HAY FATIGA,Terciario completo,Trabajando tiempo completo,850,187,27,0.5
+333_S_0003,CP0003,CONTROL,CONTROL,53,F,152,63,27.27,No infectado,NaN,60,FATIGA,Primario completo,Trabajando tiempo completo,NaN,NaN,25,1
+333_S_0004,CP0004,CONTROL,CONTROL,59,M,180,84,25.93,No infectado,NaN,70,FATIGA,NaN,NaN,NaN,NaN,25,
+333_S_0005,CP0005,CONTROL,CONTROL,54,F,160,62,24.22,No infectado,NaN,100,NO HAY FATIGA,Universitario completo,Trabajando tiempo completo,NaN,NaN,24,-0.4
+333_S_0006,CP0006,CONTROL,CONTROL,39,M,170,82,28.37,Paciente ambulatorio,completamente,90,NO HAY FATIGA,Secundario completo,Trabajando tiempo completo,163,163,22,-0.8
+333_S_0007,CP0007,CONTROL,CONTROL,47,F,159,55,21.76,Paciente ambulatorio,completamente,100,NO HAY FATIGA,Secundario completo,Trabajando tiempo completo,304,177,29,1.5
+333_S_0008,CP0008,CONTROL,CONTROL,40,M,163,70,26.35,No infectado,NaN,100,NO HAY FATIGA,Universitario incompleto,Trabajando tiempo completo,NaN,NaN,28,0.8
+333_S_0009,CP0009,CONTROL,CONTROL,35,F,150,47.5,21.11,Paciente ambulatorio,completamente,50,FATIGA,Universitario incompleto,Trabajando medio tiempo,332,192,26,0.2
+333_S_0010,CP0010,CONTROL,CONTROL,38,M,183,105,31.35,No infectado,NaN,99,NO HAY FATIGA,Universitario completo,Trabajando tiempo completo,NaN,NaN,28,0.8
+333_S_0012,CP0012,COVID,COVID,50,F,165,90,33.06,Paciente ambulatorio,No mucho,50,FATIGA,Terciario incompleto,Trabajando tiempo completo,987,395,27,0.5
+333_S_0013,CP0013,COVID,COVID,28,F,168,63,22.32,Paciente ambulatorio,No mucho,40,FATIGA,Universitario completo,NaN,945,678,29,1.15
+333_S_0014,CP0014,COVID,COVID,52,F,163,90,33.87,Internación severa (UCI),parcialmente,95,NO HAY FATIGA,Universitario completo,Trabajando tiempo completo,927,106,24,-0.4
+333_S_0017,CP0017,COVID,COVID,41,F,156,63.5,26.09,Paciente ambulatorio,parcialmente,80,FATIGA,Secundario completo,Trabajando tiempo completo,1032,1032,24,-0.17
+333_S_0019,CP0019,COVID,COVID,49,M,187,90,25.74,Paciente ambulatorio,para nada,50,FATIGA,Universitario incompleto,Trabajando tiempo completo,437,134,29,1.15
+333_S_0020,CP0020,CONTROL,CONTROL,44,M,177,78,24.9,Paciente ambulatorio,No mucho,70,FATIGA,Universitario incompleto,buscó trabajo en últimos 2 meses,324,324,27,0.53
+333_S_0021,CP0021,COVID,COVID,42,F,160,53,20.7,Paciente ambulatorio,parcialmente,80,FATIGA,Secundario incompleto,Trabajando medio tiempo,478,478,28,1.9
+333_S_0022,CP0022,COVID,COVID,46,F,160,65,25.39,Paciente ambulatorio,No mucho,50,FATIGA EXTREMA,Terciario incompleto,Trabajando medio tiempo,1039,552,28,0.84
+333_S_0023,CP0023,COVID,COVID,42,M,175,78,25.47,Paciente ambulatorio,parcialmente,98,NO HAY FATIGA,Universitario completo,Trabajando tiempo completo,448,448,30,1.4
+333_S_0024,CP0024,COVID,COVID,46,F,157,70,28.4,Paciente ambulatorio,parcialmente,65,FATIGA,Terciario incompleto,Trabajando tiempo completo,795,300,20,-1.6
+333_S_0025,CP0025,COVID,COVID,56,F,144,47,22.67,Paciente ambulatorio,parcialmente,70,FATIGA,Terciario incompleto,buscó trabajo en últimos 2 meses,489,489,27,0.5
+333_S_0026,CP0026,COVID,COVID,49,F,171,81,27.7,Paciente ambulatorio,No mucho,60,FATIGA EXTREMA,Terciario completo,Haciendo tareas del hogar,737,737,25,-0.9
+333_S_0027,CP0027,COVID,COVID,25,M,160,55,21.48,Paciente ambulatorio,parcialmente,55,NO HAY FATIGA,Universitario incompleto,Estudiando,798,798,30,1.4
+333_S_0028,CP0028,COVID,COVID,47,F,170,88,30.45,Internación moderada,parcialmente,70,FATIGA,Secundario completo,Trabajando tiempo completo,760,372,26,0.5
+333_S_0029,CP0029,COVID,COVID,45,F,159,54,21.36,Paciente ambulatorio,parcialmente,75,FATIGA EXTREMA,Terciario completo,Trabajando tiempo completo,1075,710,26,0.2
+333_S_0030,CP0030,COVID,COVID,59,F,167,70,25.1,Paciente ambulatorio,No mucho,60,FATIGA,Secundario completo,Desocupado y buscó trabajo en últimos 2 meses,861,771,27,0.86
+333_S_0031,CP0031,COVID,COVID,59,F,160,108,42.19,Paciente ambulatorio,No mucho,60,FATIGA EXTREMA,Terciario completo,Trabajando tiempo completo,741,345,25,0
+333_S_0032,CP0032,COVID,COVID,53,F,160,73,28.52,Paciente ambulatorio,No mucho,40,FATIGA EXTREMA,Universitario incompleto,Trabajando medio tiempo,774,774,29,1.15
+333_S_0033,CP0033,COVID,COVID,55,F,161,70,27.01,Paciente ambulatorio,No mucho,70,FATIGA,Universitario completo,Trabajando tiempo completo,683,683,26,0.2
+333_S_0035,CP0035,COVID,COVID,47,F,154,60,25.3,Paciente ambulatorio,para nada,60,FATIGA EXTREMA,Terciario completo,Trabajando tiempo completo,960,960,26,0.21
+333_S_0036,CP0036,COVID,COVID,41,F,155,90,37.46,Paciente ambulatorio,No mucho,80,FATIGA,Terciario incompleto,Trabajando medio tiempo,322,322,27,0.53
+333_S_0037,CP0037,COVID,COVID,44,F,170,73,25.26,Paciente ambulatorio,No mucho,85,FATIGA,Universitario incompleto,Trabajando medio tiempo,990,837,29,1.15
+333_S_0038,CP0038,COVID,COVID,39,F,153,40,17.09,Paciente ambulatorio,parcialmente,80,NO HAY FATIGA,Terciario completo,Otro,993,506,25,1.08
+333_S_0039,CP0039,COVID,COVID,49,M,183,104,31.05,Paciente ambulatorio,No mucho,75,FATIGA,Posgrado,Trabajando tiempo completo,993,993,28,0.8
+333_S_0040,CP0040,COVID,COVID,57,F,170,72,24.91,Paciente ambulatorio,No mucho,70,FATIGA,Universitario completo,Cuidando familiar enfermo,393,362,26,0.2
+333_S_0041,CP0041,COVID,COVID,59,F,152,63,27.27,Internación moderada,No mucho,70,FATIGA,Universitario completo,Trabajando tiempo completo,1059,301,24,-0.4
+333_S_0042,CP0042,COVID,COVID,44,M,186,72,20.81,Paciente ambulatorio,para nada,80,NO HAY FATIGA,Terciario completo,Trabajando tiempo completo,982,982,28,0.8
+333_S_0043,CP0043,COVID,COVID,59,F,162,104,39.63,Paciente ambulatorio,No mucho,50,FATIGA,Terciario completo,Jubilado,969,969,29,1.15
+333_S_0044,CP0044,COVID,COVID,37,F,156,59,24.24,Paciente ambulatorio,No mucho,80,FATIGA,Universitario incompleto,Trabajando medio tiempo,501,501,16,-2
+333_S_0045,CP0045,COVID,COVID,65,M,168,90,31.89,Internación moderada,No mucho,40,FATIGA,Primario completo,Jubilado,715,715,18,-0.9
+333_S_0046,CP0046,COVID,COVID,53,F,183,95,28.37,Internación moderada,No mucho,30,FATIGA,Posgrado,Trabajando tiempo completo,792,792,27,0.5
+333_S_0048,CP0048,COVID,COVID,43,F,172,63,21.3,Paciente ambulatorio,No mucho,100,NO HAY FATIGA,Terciario completo,Trabajando tiempo completo,1011,555,23,-0.71
+333_S_0049,CP0049,COVID,COVID,50,F,165,85,31.22,Internación moderada,para nada,60,FATIGA,Universitario incompleto,Trabajando medio tiempo,769,769,24,-0.4
+333_S_0050,CP0050,COVID,COVID,44,F,164,57,21.19,Paciente ambulatorio,No mucho,60,FATIGA,Universitario incompleto,Trabajando tiempo completo,1026,1026,25,-0.09
+333_S_0052,CP0052,COVID,COVID,60,F,168,75,26.57,Paciente ambulatorio,No mucho,70,FATIGA EXTREMA,Terciario completo,Jubilado,977,977,26,0.2
+333_S_0053,CP0053,COVID,COVID,60,F,156,61,25.07,Paciente ambulatorio,No mucho,65,FATIGA EXTREMA,Universitario completo,Desocupado y buscó trabajo en últimos 2 meses,916,489,27,0.5
+333_S_0054,CP0054,COVID,COVID,51,M,173,85,28.4,Paciente ambulatorio,No mucho,60,FATIGA,Universitario completo,Licencia,1054,475,27,0.5
+333_S_0055,CP0055,COVID,COVID,59,F,164,67,24.91,Internación moderada,para nada,40,FATIGA,Posgrado,Trabajando medio tiempo,762,517,28,0.84
+333_S_0056,CP0056,COVID,COVID,52,M,180,72,22.22,Paciente ambulatorio,completamente,70,NO HAY FATIGA,Universitario incompleto,Trabajando medio tiempo,517,517,28,0.84
+333_S_0059,CP0059,COVID,COVID,41,F,163,95,35.76,Paciente ambulatorio,No mucho,65,FATIGA,Terciario completo,Trabajando tiempo completo,684,562,29,1.15
+333_S_0060,CP0060,COVID,COVID,50,F,156,60,24.65,Paciente ambulatorio,No mucho,65,FATIGA,Posgrado,Trabajando tiempo completo,806,806,26,0.21
+333_S_0061,CP0061,COVID,COVID,69,M,173,84,28.07,Internación moderada,parcialmente,75,NO HAY FATIGA,Universitario incompleto,Trabajando tiempo completo,1076,527,24,-0.17
+333_S_0062,CP0062,COVID,COVID,62,M,170,120,41.52,Internación moderada,parcialmente,65,FATIGA EXTREMA,Secundario completo,Trabajando tiempo completo,527,527,21,-1.2
+333_S_0064,CP0064,COVID,COVID,39,M,176,83,26.79,Paciente ambulatorio,No mucho,90,FATIGA,Secundario incompleto,Trabajando tiempo completo,1080,1080,17,-2
+333_S_0065,CP0065,COVID,COVID,54,F,172,89,30.08,Paciente ambulatorio,para nada,60,FATIGA,Secundario completo,Trabajando tiempo completo,1312,368,27,0.86
+333_S_0066,CP0066,COVID,COVID,52,F,170,75,25.95,Paciente ambulatorio,parcialmente,70,FATIGA,Universitario completo,Trabajando tiempo completo,411,411,27,0.53
+333_S_0067,CP0067,COVID,COVID,40,M,158,70,28.04,Paciente ambulatorio,No mucho,75,NO HAY FATIGA,Universitario incompleto,Haciendo tareas del hogar,972,543,26,0.21
+333_S_0068,CP0068,COVID,COVID,37,M,172,88,29.75,Paciente ambulatorio,No mucho,90,FATIGA,Universitario completo,Otro,637,637,25,-0.09
+333_S_0069,CP0069,COVID,COVID,48,F,152,48,20.78,Paciente ambulatorio,No mucho,85,FATIGA,Universitario incompleto,Trabajando tiempo completo,1081,685,28,0.84
+333_S_0070,CP0070,COVID,COVID,41,M,168,60.9,21.58,Paciente ambulatorio,No mucho,70,FATIGA,Terciario incompleto,Trabajando medio tiempo,1181,467,27,0.5
+333_S_0071,CP0071,COVID,COVID,45,F,165,56,20.57,Paciente ambulatorio,para nada,0,FATIGA EXTREMA,Secundario completo,Desocupado y no buscó trabajo en últimos 2 meses,692,534,17,-2
+333_S_0072,CP0072,COVID,COVID,55,F,170,62,21.45,Paciente ambulatorio,para nada,20,FATIGA,Secundario incompleto,Haciendo tareas del hogar,1087,1087,15,-3.27
+333_S_0073,CP0073,COVID,COVID,40,M,178,95,29.98,Internación moderada,parcialmente,75,FATIGA EXTREMA,Secundario completo,Trabajando tiempo completo,777,777,25,0.1
+333_S_0074,CP0074,COVID,COVID,36,M,170,70,24.22,Internación severa (UCI),No mucho,50,FATIGA,Primario incompleto,Reposo por enfermedad,810,810,23,0.51
+333_S_0075,CP0075,COVID,COVID,49,F,163,62,23.34,Paciente ambulatorio,parcialmente,85,NO HAY FATIGA,Universitario completo,Trabajando medio tiempo,1077,681,27,0.53
+333_S_0076,CP0076,COVID,COVID,54,F,156,53,21.78,Paciente ambulatorio,para nada,45,NO HAY FATIGA,Universitario completo,Licencia,559,559,21,-1.34
+333_S_0078,CP0078,CONTROL,CONTROL,35,M,180,84,25.93,No infectado,NaN,70,FATIGA,NaN,NaN,NaN,NaN,26,0.21
+333_S_0079,CP0079,CONTROL,CONTROL,43,F,152,52,22.51,Paciente ambulatorio,completamente,75,NO HAY FATIGA,Terciario completo,Trabajando tiempo completo,395,395,28,0.8
+333_S_0080,CP0080,CONTROL,CONTROL,33,F,156,65,26.71,No infectado,NaN,95,NO HAY FATIGA,Universitario completo,Desocupado y no buscó trabajo en últimos 2 meses,NaN,NaN,26,0.21
+333_S_0081,CP0081,CONTROL,CONTROL,39,F,161,93,35.88,No infectado,NaN,90,NO HAY FATIGA,Universitario incompleto,Estudiando,NaN,NaN,28,1.2
+333_S_0082,CP0082,CONTROL,CONTROL,37,F,163,77,28.98,Paciente ambulatorio,completamente,80,NO HAY FATIGA,Posgrado,Trabajando tiempo completo,419,419,30,1.4
+333_S_0084,CP0084,CONTROL,CONTROL,35,F,151,70,30.7,No infectado,NaN,50,FATIGA,Secundario incompleto,Trabajando medio tiempo,NaN,NaN,23,0.5
+333_S_0085,CP0085,CONTROL,CONTROL,52,F,170,76,26.3,No infectado,NaN,70,NO HAY FATIGA,NaN,NaN,NaN,NaN,22,-0.8
+333_S_0086,CP0086,CONTROL,CONTROL,35,F,152,55,23.81,No infectado,NaN,95,NO HAY FATIGA,Universitario incompleto,Trabajando tiempo completo,NaN,NaN,25,-0.09
+333_S_0088,CP0088,CONTROL,CONTROL,37,F,150,55,24.44,No infectado,NaN,70,NO HAY FATIGA,Universitario incompleto,Trabajando tiempo completo,NaN,NaN,22,-1.03
+333_S_0089,CP0089,COVID,COVID,48,F,170,73,25.26,Paciente ambulatorio,completamente,95,FATIGA,Universitario incompleto,Trabajando tiempo completo,1137,1137,26,0.21
+333_S_0090,CP0090,CONTROL,CONTROL,34,F,150,46,20.44,Paciente ambulatorio,parcialmente,70,FATIGA,Terciario incompleto,Otro,587,497,29,1.15
+333_S_0091,CP0091,COVID,COVID,41,F,168,60.9,21.58,Paciente ambulatorio,No mucho,70,FATIGA,Terciario incompleto,Trabajando medio tiempo,1228,315,28,0.84
+333_S_0092,CP0092,CONTROL,CONTROL,47,M,174,72,23.78,No infectado,NaN,90,NO HAY FATIGA,Universitario completo,Trabajando tiempo completo,NaN,NaN,28,0.84
+333_S_0093,CP0093,COVID,COVID,50,F,164,78,29,Paciente ambulatorio,No mucho,50,FATIGA EXTREMA,Terciario completo,Trabajando tiempo completo,592,592,27,0.53
+333_S_0094,CP0094,COVID,COVID,50,F,165,90,33.06,Paciente ambulatorio,No mucho,60,FATIGA,Universitario incompleto,Trabajando tiempo completo,778,48,26,0.21
+333_S_0096,CP0096,CONTROL,CONTROL,37,M,180,78,24.07,No infectado,NaN,65,NO HAY FATIGA,Secundario incompleto,Trabajando tiempo completo,NaN,NaN,27,1.65
+333_S_0097,CP0097,CONTROL,CONTROL,57,F,160,64,25,No infectado,NaN,90,NO HAY FATIGA,Universitario incompleto,Jubilado,NaN,NaN,30,1.46
+333_S_0098,CP0098,CONTROL,CONTROL,58,F,164,93,34.58,Paciente ambulatorio,completamente,80,NO HAY FATIGA,Universitario incompleto,Estudiando,1007,277,24,-0.4
+333_S_0099,CP0099,CONTROL,CONTROL,57,F,160,84,32.81,No infectado,NaN,80,NO HAY FATIGA,Universitario incompleto,Trabajando medio tiempo,NaN,NaN,23,-0.7
+333_S_0100,CP0100,COVID,COVID,50,M,169,90,31.51,Paciente ambulatorio,parcialmente,70,FATIGA,Secundario incompleto,Trabajando tiempo completo,782,782,23,-0.71
+333_S_0101,CP0101,CONTROL,CONTROL,45,M,179,77,24.03,No infectado,NaN,95,FATIGA,Posgrado,Trabajando tiempo completo,NaN,NaN,25,-0.9
+333_S_0105,CP0105,COVID,COVID,55,M,183,103,30.76,Paciente ambulatorio,No mucho,75,FATIGA,Secundario incompleto,Trabajando tiempo completo,698,NaN,27,0.86
+333_S_0107,CP0107,COVID,COVID,44,M,170,111,38.41,Internación moderada,parcialmente,50,FATIGA EXTREMA,Universitario completo,Trabajando tiempo completo,1224,731,26,0.2
+333_S_0108,CP0108,COVID,COVID,59,M,170,86,29.76,Internación moderada,para nada,60,FATIGA EXTREMA,Primario completo,Desocupado y no buscó trabajo en últimos 2 meses,1225,130,25,1.08
+333_S_0109,CP0109,COVID,COVID,45,F,170,134,46.37,Paciente ambulatorio,No mucho,50,FATIGA EXTREMA,Universitario incompleto,Trabajando tiempo completo,981,NaN,24,-0.4
+333_S_0110,CP0110,COVID,COVID,64,F,163,73,27.48,Paciente ambulatorio,completamente,95,FATIGA,Universitario completo,Jubilado,1346,100,26,0.2
+333_S_0111,CP0111,COVID,COVID,42,F,159,67,26.5,Paciente ambulatorio,No mucho,90,FATIGA,Posgrado,Estudiando,668,668,25,-0.0093
+333_S_0112,CP0112,COVID,COVID,46,F,157,75,30.43,Paciente ambulatorio,parcialmente,60,FATIGA,Universitario incompleto,Trabajando tiempo completo,961,961,24,-0.4
+333_S_0113,CP0113,COVID,COVID,45,F,163,98,36.89,Paciente ambulatorio,No mucho,65,FATIGA,Universitario incompleto,Trabajando tiempo completo,878,878,27,0.86
+333_S_0114,CP0114,COVID,COVID,43,F,155,70,29.14,NaN,para nada,70,FATIGA EXTREMA,Secundario incompleto,Trabajando medio tiempo,1526,NaN,27,1.6
+333_S_0115,CP0115,COVID,COVID,45,F,168,100,35.43,Paciente ambulatorio,No mucho,40,FATIGA EXTREMA,Universitario incompleto,Estudiando,NaN,NaN,26,0.51
+333_S_0116,CP0116,COVID,COVID,40,F,165,94,34.53,Paciente ambulatorio,No mucho,75,FATIGA,Universitario completo,Trabajando tiempo completo,627,627,26,0.21
+333_S_0117,CP0117,COVID,COVID,56,F,160,110,42.97,Paciente ambulatorio,No mucho,60,FATIGA,Secundario completo,Desocupado y buscó trabajo en últimos 2 meses,1022,1022,21,-1.2
+333_S_0118,CP0118,COVID,COVID,53,F,173,71,23.72,Paciente ambulatorio,No mucho,70,FATIGA,Terciario incompleto,Trabajando medio tiempo,1176,1176,26,0.21
+333_S_0121,CP0121,COVID,COVID,43,M,169,67,23.46,Paciente ambulatorio,parcialmente,50,FATIGA EXTREMA,Secundario incompleto,Trabajando tiempo completo,1214,1214,25,1.08
+333_S_0122,CP0122,COVID,COVID,43,M,183,96,28.67,Paciente ambulatorio,parcialmente,80,FATIGA,Universitario incompleto,Trabajando tiempo completo,1214,1214,24,-0.17
+333_S_0123,CP0123,COVID,COVID,58,M,178,80,25.25,Internación severa (UCI),parcialmente,90,NO HAY FATIGA,Secundario completo,Trabajando tiempo completo,1084,1084,27,0.86
+333_S_0124,CP0124,COVID,COVID,53,F,162,60,22.86,Paciente ambulatorio,No mucho,55,FATIGA,Terciario completo,buscó trabajo en últimos 2 meses,672,313,29,1.15
+333_S_0125,CP0125,COVID,COVID,47,F,163,120,45.17,Paciente ambulatorio,No mucho,45,FATIGA EXTREMA,Secundario completo,Trabajando tiempo completo,696,696,23,-0.51
+333_S_0126,CP0126,COVID,COVID,53,F,158,64,25.64,Paciente ambulatorio,parcialmente,35,FATIGA EXTREMA,Primario completo,Trabajando medio tiempo,1221,1221,28,1.9
+333_S_0127,CP0127,COVID,COVID,48,F,160,55,21.48,Paciente ambulatorio,parcialmente,50,FATIGA,Universitario incompleto,Haciendo tareas del hogar,1023,658,28,0.84
+333_S_0128,CP0128,COVID,COVID,47,F,157,55,22.31,Paciente ambulatorio,No mucho,60,FATIGA,Secundario completo,Trabajando medio tiempo,651,651,27,0.86
+333_S_0131,CP0131,COVID,COVID,47,F,172,95,32.11,Paciente ambulatorio,No mucho,75,FATIGA,Universitario completo,Trabajando tiempo completo,1235,1235,25,-0.09
+333_S_0133,CP0133,COVID,COVID,37,F,165,92,33.79,Paciente ambulatorio,parcialmente,55,FATIGA,Universitario completo,Trabajando tiempo completo,300,300,29,1.15
+333_S_0134,CP0134,COVID,COVID,35,F,162,59,22.48,Paciente ambulatorio,No mucho,80,FATIGA,Terciario incompleto,Trabajando tiempo completo,940,665,27,0.53
+333_S_0135,CP0135,COVID,COVID,39,F,157,75,30.43,Paciente ambulatorio,No mucho,95,NO HAY FATIGA,Universitario completo,Trabajando tiempo completo,1183,787,28,0.84
+333_S_0136,CP0136,COVID,COVID,49,M,167,121,43.39,Paciente ambulatorio,parcialmente,65,NO HAY FATIGA,Universitario incompleto,Trabajando tiempo completo,903,NaN,28,0.8
+333_S_0138,CP0138,COVID,COVID,50,F,160,78,30.47,Paciente ambulatorio,No mucho,60,FATIGA,Secundario completo,Trabajando medio tiempo,1244,361,28,1.2
+333_S_0139,CP0139,COVID,COVID,35,F,155,110,45.79,Paciente ambulatorio,parcialmente,70,NO HAY FATIGA,Secundario completo,Level 1,672,NaN,21,-1.2
+333_S_0140,CP0140,COVID,COVID,47,F,160,90,35.16,Paciente ambulatorio,No mucho,70,FATIGA EXTREMA,Universitario incompleto,Trabajando tiempo completo,1183,696,23,-1
+333_S_0141,CP0141,COVID,COVID,54,F,166,71,25.77,NaN,No mucho,80,FATIGA,Terciario completo,Trabajando tiempo completo,1495,1008,25,-0.09
+333_S_0142,CP0142,COVID,COVID,59,M,170,78,26.99,Internación severa (UCI),No mucho,75,NO HAY FATIGA,Secundario incompleto,Trabajando tiempo completo,990,990,23,0.5
+333_S_0143,CP0143,COVID,COVID,52,F,153,55,23.5,Paciente ambulatorio,para nada,85,NaN,Terciario incompleto,Trabajando tiempo completo,1068,338,22,-0.86
+333_S_0145,CP0145,COVID,COVID,37,F,153,65,27.77,Paciente ambulatorio,No mucho,50,FATIGA,Secundario completo,Trabajando tiempo completo,1282,1282,26,0.51
+333_S_0146,CP0146,COVID,COVID,46,F,154,65,27.41,Paciente ambulatorio,parcialmente,75,NO HAY FATIGA,Posgrado,Trabajando tiempo completo,999,88,29,1.15
+333_S_0147,CP0147,COVID,COVID,51,F,165,86,31.59,Paciente ambulatorio,completamente,70,FATIGA,Secundario incompleto,Trabajando tiempo completo,905,905,26,0.51
+333_S_0148,CP0148,COVID,COVID,47,M,175,90,29.39,Internación moderada,para nada,60,FATIGA,Secundario completo,Trabajando tiempo completo,1312,1129,20,-1.55
+333_S_0149,CP0149,COVID,COVID,53,M,170,75,25.95,Paciente ambulatorio,No mucho,60,FATIGA EXTREMA,Terciario completo,Desocupado y buscó trabajo en últimos 2 meses,1152,1152,26,0.51
+333_S_0153,CP0153,COVID,COVID,43,F,162,70,26.67,Internación moderada,parcialmente,80,FATIGA,Universitario completo,Trabajando tiempo completo,1199,685,27,0.5
+333_S_0154,CP0154,COVID,COVID,42,M,191,83,22.75,Internación moderada,No mucho,40,FATIGA,Terciario completo,Trabajando tiempo completo,1288,1288,24,-0.4
+333_S_0156,CP0156,COVID,COVID,38,F,165,63,23.14,Paciente ambulatorio,para nada,20,FATIGA EXTREMA,Terciario completo,Trabajando medio tiempo,1060,1060,26,0.9
+333_S_0157,CP0157,COVID,COVID,49,F,175,70,22.86,Paciente ambulatorio,parcialmente,55,FATIGA EXTREMA,Terciario completo,Trabajando tiempo completo,1173,778,27,0.5
+333_S_0158,CP0158,COVID,COVID,49,F,178,84,26.51,Paciente ambulatorio,parcialmente,70,FATIGA EXTREMA,Universitario incompleto,Estudiando,NaN,NaN,22,-1.03
+333_S_0159,CP0159,COVID,COVID,60,F,158,74,29.64,Paciente ambulatorio,No mucho,80,FATIGA,Universitario completo,Trabajando tiempo completo,1204,290,26,0.2
+333_S_0160,CP0160,COVID,COVID,36,M,185,93.1,27.2,Paciente ambulatorio,parcialmente,67,FATIGA,Universitario completo,Trabajando tiempo completo,1326,1051,25,-0.09
+333_S_0161,CP0161,COVID,COVID,50,F,152,82,35.49,Paciente ambulatorio,No mucho,70,FATIGA EXTREMA,Terciario completo,Trabajando medio tiempo,692,692,29,1.1
+333_S_0162,CP0162,COVID,COVID,61,F,166,77,27.94,Paciente ambulatorio,No mucho,70,FATIGA,Terciario completo,Trabajando tiempo completo,686,686,25,-0.09
+333_S_0163,CP0163,COVID,COVID,51,F,161,85,32.79,Paciente ambulatorio,No mucho,80,FATIGA,Terciario incompleto,Trabajando tiempo completo,1330,720,24,-0.4
+333_S_0165,CP0165,COVID,COVID,53,F,155,61,25.39,Paciente ambulatorio,parcialmente,60,FATIGA,Secundario completo,Otro,873,683,25,0.2
+333_S_0166,CP0166,COVID,COVID,52,F,175,87,28.41,Paciente ambulatorio,No mucho,70,FATIGA,Secundario completo,Trabajando tiempo completo,915,1029,29,1.5
+333_S_0167,CP0167,COVID,COVID,41,F,168,95,33.66,Paciente ambulatorio,parcialmente,65,FATIGA,NaN,NaN,884,NaN,30,1.4
+333_S_0168,CP0168,COVID,COVID,42,M,173,75,25.06,Paciente ambulatorio,No mucho,70,FATIGA,Secundario incompleto,Trabajando medio tiempo,1383,896,29,0.5
+333_S_0169,CP0169,COVID,COVID,44,F,159,80,31.64,Paciente ambulatorio,No mucho,60,FATIGA,Secundario completo,Trabajando tiempo completo,885,75,23,-0.5
+333_S_0170,CP0170,COVID,COVID,38,M,171,100,34.2,Internación moderada,No mucho,75,FATIGA,Universitario incompleto,Trabajando tiempo completo,1445,1202,29,1.5
+333_S_0171,CP0171,COVID,COVID,40,F,162,75,2929.69,Paciente ambulatorio,para nada,30,FATIGA EXTREMA,Terciario incompleto,Otro,1141,NaN,29,1.1
+333_S_0172,CP0172,COVID,COVID,45,M,169,83,29.06,Paciente ambulatorio,No mucho,79,FATIGA,Universitario completo,Trabajando tiempo completo,927,100,2,-1
+333_S_0173,CP0173,COVID,COVID,54,F,167,68,24.38,Paciente ambulatorio,No mucho,50,FATIGA,Terciario completo,Trabajando tiempo completo,1282,NaN,24,-0.4
+333_S_0174,CP0174,COVID,COVID,62,F,160,58,22.66,Paciente ambulatorio,No mucho,65,FATIGA EXTREMA,Universitario completo,Trabajando tiempo completo,1435,NaN,29,1.1
+333_S_0175,CP0175,COVID,COVID,56,F,167,57,20.44,Paciente ambulatorio,parcialmente,65,FATIGA EXTREMA,Terciario incompleto,Trabajando tiempo completo,1463,NaN,26,0.5
+333_S_0176,CP0176,COVID,COVID,64,M,177,80,25.54,Paciente ambulatorio,No mucho,65,FATIGA,Posgrado,Haciendo tareas del hogar,948,127,29,1.1
+333_S_0177,CP0177,COVID,COVID,51,F,150,62,27.56,Paciente ambulatorio,No mucho,60,FATIGA,Secundario incompleto,Otro,1588,187,21,-1.2
+333_S_0178,CP0178,COVID,COVID,42,M,180,100,30.86,Paciente ambulatorio,No mucho,70,FATIGA,Terciario incompleto,Desocupado y buscó trabajo en últimos 2 meses,1251,583,29,1.1
+333_S_0180,CP0180,COVID,COVID,66,F,150,80,35.56,Paciente ambulatorio,parcialmente,70,FATIGA,Universitario incompleto,Jubilado,725,NaN,24,-0.4
+333_S_0181,CP0181,COVID,COVID,62,F,162,52,19.81,Paciente ambulatorio,No mucho,50,FATIGA,Terciario completo,Licencia,1230,924,28,0.8
+333_S_0182,CP0182,COVID,COVID,55,F,165,69,25.34,Paciente ambulatorio,parcialmente,90,FATIGA,Secundario incompleto,Trabajando tiempo completo,665571,949,27,0.86
+333_S_0183,CP0183,COVID,COVID,64,M,170,107,37.02,Paciente ambulatorio,No mucho,95,FATIGA,Secundario incompleto,Trabajando tiempo completo,1289,NaN,27,1.6
+333_S_0185,CP0185,COVID,COVID,51,F,160,77,30.08,Paciente ambulatorio,para nada,40,FATIGA EXTREMA,Universitario incompleto,Trabajando tiempo completo,1290,NaN,25,-0.09
+333_S_0186,CP0186,COVID,COVID,45,F,158,58,23.23,Paciente ambulatorio,parcialmente,85,FATIGA,Posgrado,Trabajando tiempo completo,1411,NaN,24,-0.4
+333_S_0187,CP0187,COVID,COVID,63,M,175,90,29.39,Internación moderada,para nada,60,FATIGA,Secundario completo,Trabajando tiempo completo,1592,1409,29,1.1
+333_S_0188,CP0188,COVID,COVID,44,M,165,79,29.02,Paciente ambulatorio,parcialmente,80,NO HAY FATIGA,Universitario incompleto,Trabajando tiempo completo,NaN,927,28,0.8
+333_S_0189,CP0189,COVID,COVID,47,M,177,80,25.54,Paciente ambulatorio,No mucho,65,FATIGA,Posgrado,Haciendo tareas del hogar,1004,183,30,1.4
+333_S_0190,CP0190,COVID,COVID,63,F,150,62,27.56,Paciente ambulatorio,No mucho,60,FATIGA,Secundario incompleto,Otro,1637,236,27,1.6
+333_S_0191,CP0191,COVID,COVID,49,M,180,100,30.86,Paciente ambulatorio,No mucho,70,FATIGA,Terciario incompleto,Desocupado y buscó trabajo en últimos 2 meses,1300,632,26,0.5
+333_S_0192,CP0192,COVID,COVID,39,F,159,72,28.48,Paciente ambulatorio,parcialmente,55,FATIGA,Universitario incompleto,Trabajando tiempo completo,754,358,25,-0.09
+333_S_0194,CP0194,COVID,COVID,46,F,170,90,31.14,Paciente ambulatorio,parcialmente,80,FATIGA,Terciario completo,Trabajando medio tiempo,966,NaN,29,1.1
+333_S_0195,CP0195,CONTROL,CONTROL,53,M,161,79,30.48,No infectado,NaN,65,NO HAY FATIGA,Terciario completo,Trabajando tiempo completo,NaN,NaN,26,-0.09
+333_S_0196,CP0196,COVID,COVID,42,F,162,105,40.01,Paciente ambulatorio,No mucho,40,FATIGA,Secundario incompleto,Trabajando medio tiempo,1187,1034,30,1.4
+333_S_0197,CP0197,CONTROL,CONTROL,59,M,168,70,24.8,No infectado,NaN,80,NO HAY FATIGA,Primario completo,Licencia,NaN,NaN,25,0.2
+333_S_0198,CP0198,COVID,COVID,61,F,160,52,20.31,Paciente ambulatorio,parcialmente,80,NO HAY FATIGA,Terciario incompleto,Haciendo tareas del hogar,1583,1095,26,1.3
+333_S_0199,CP0199,COVID,COVID,63,F,165,72,26.45,Paciente ambulatorio,parcialmente,80,FATIGA,Terciario completo,Trabajando tiempo completo,961,NaN,27,0.5
+333_S_0200,CP0200,CONTROL,CONTROL,64,F,169,67,23.46,Paciente ambulatorio,parcialmente,50,FATIGA EXTREMA,Secundario incompleto,Trabajando tiempo completo,1543,1543,30,1.4
+333_S_0201,CP0201,COVID,COVID,54,F,162,105,40.01,Paciente ambulatorio,No mucho,40,FATIGA,Secundario incompleto,Trabajando medio tiempo,1187,1034,25,0.2
+333_S_0202,CP0202,CONTROL,CONTROL,59,M,168,70,24.8,No infectado,NaN,80,NO HAY FATIGA,Primario completo,Licencia,NaN,NaN,20,-0.3
+333_S_0203,CP0203,COVID,COVID,61,F,160,52,20.31,Paciente ambulatorio,parcialmente,80,NO HAY FATIGA,Terciario incompleto,Haciendo tareas del hogar,1583,1095,25,0.2
+333_S_0204,CP0204,COVID,COVID,51,F,165,72,26.45,Paciente ambulatorio,parcialmente,80,FATIGA,Terciario completo,Trabajando tiempo completo,961,NaN,30,1.4
+333_S_0205,CP0205,COVID,COVID,61,F,165,72,26.45,Paciente ambulatorio,parcialmente,80,FATIGA,Terciario completo,Trabajando tiempo completo,961,NaN,30,1.4
+333_S_0206,CP0206,COVID,COVID,52,F,157,100,40.57,Paciente ambulatorio,No mucho,55,FATIGA,Universitario incompleto,Trabajando tiempo completo,1307,NaN,25,0.2
+333_S_0207,CP0207,COVID,COVID,49,F,154,73,30.78,Paciente ambulatorio,NaN,45,FATIGA,Primario incompleto,Trabajando tiempo completo,1286,NaN,26,1.3
+333_S_0208,CP0208,CONTROL,CONTROL,49,M,174,77,25.43,Paciente ambulatorio,completamente,80,NO HAY FATIGA,Terciario completo,Trabajando tiempo completo,1157,NaN,27,0.5
+333_S_0209,CP0209,CONTROL,CONTROL,54,F,163,100,37.64,Paciente ambulatorio,completamente,80,FATIGA,Terciario incompleto,Trabajando medio tiempo,240,NaN,27,0.8
+333_S_0210,CP0210,CONTROL,CONTROL,47,M,169,67,23.46,Paciente ambulatorio,parcialmente,50,FATIGA EXTREMA,Secundario incompleto,Trabajando tiempo completo,1543,1543,30,1.4
+333_S_0211,CP0211,CONTROL,CONTROL,58,M,183,96,28.67,Paciente ambulatorio,parcialmente,80,FATIGA,Universitario incompleto,Trabajando tiempo completo,1543,1543,26,0.5
+333_S_0212,CP0212,CONTROL,CONTROL,64,F,162,55,20.96,Paciente ambulatorio,completamente,90,NO HAY FATIGA,Secundario completo,Trabajando medio tiempo,1390,NaN,29,1.5
+333_S_0213,CP0213,CONTROL,CONTROL,52,F,170,65,22.49,Paciente ambulatorio,completamente,75,NO HAY FATIGA,Terciario completo,Trabajando tiempo completo,1147,635,29,1.1
+333_S_0214,CP0214,CONTROL,CONTROL,46,M,178,78,24.62,Paciente ambulatorio,completamente,90,NO HAY FATIGA,Terciario incompleto,Estudiando,1573,1300,26,0.5
+333_S_0215,CP0215,CONTROL,CONTROL,47,M,163,67,25.22,Paciente ambulatorio,parcialmente,72,FATIGA,Universitario incompleto,Trabajando medio tiempo,994,1543,28,0.8
+333_S_0216,CP0216,CONTROL,CONTROL,69,M,170,78,26.99,No infectado,NaN,95,NO HAY FATIGA,Universitario incompleto,Jubilado,NaN,NaN,30,1.4
+333_S_0217,CP0217,COVID,COVID,55,F,158,70,28.04,Paciente ambulatorio,No mucho,50,FATIGA EXTREMA,Terciario completo,Pensionado,881,240,29,1.1
+333_S_0218,CP0218,COVID,COVID,54,F,163,100,37.64,Paciente ambulatorio,No mucho,70,FATIGA,Universitario completo,Trabajando tiempo completo,240,NaN,30,1.4
+333_S_0219,CP0219,CONTROL,CONTROL,47,F,161,65,25.08,Paciente ambulatorio,completamente,80,NO HAY FATIGA,Secundario completo,Trabajando tiempo completo,985,NaN,26,0.5
+333_S_0220,CP0220,COVID,COVID,29,F,167,78,27.97,Paciente ambulatorio,No mucho,20,FATIGA EXTREMA,Terciario completo,Jubilado,NaN,65,26,0.2
+333_S_0221,CP0221,CONTROL,CONTROL,52,M,174,95,31.38,Paciente ambulatorio,completamente,90,NO HAY FATIGA,Secundario completo,Trabajando tiempo completo,977,NaN,28,1.2
+333_S_0222,CP0222,COVID,COVID,43,F,166,69,25.04,Paciente ambulatorio,para nada,30,FATIGA,Universitario completo,Haciendo tareas del hogar,1618,431,28,0.8
+333_S_0223,CP0223,COVID,COVID,50,M,169,82,28.71,Paciente ambulatorio,parcialmente,100,NO HAY FATIGA,Secundario completo,Trabajando medio tiempo,1434,1008,26,0.5
+333_S_0224,CP0224,COVID,COVID,53,M,176,110,35.51,Paciente ambulatorio,parcialmente,60,FATIGA EXTREMA,NaN,NaN,723,NaN,25,0.2
+333_S_0225,CP0225,COVID,COVID,42,F,171,110,37.62,Paciente ambulatorio,parcialmente,50,FATIGA,Universitario incompleto,Licencia,1530,1012,29,1.5
+333_S_0226,CP0226,COVID,COVID,38,F,160,100,39.06,Paciente ambulatorio,parcialmente,75,NO HAY FATIGA,Universitario completo,Trabajando tiempo completo,1561,1012,23,-0.7
+333_S_0227,CP0227,COVID,COVID,49,M,172,90,30.42,Paciente ambulatorio,parcialmente,90,FATIGA,Secundario completo,Trabajando tiempo completo,894,NaN,26,0.5
+333_S_0228,CP0228,COVID,COVID,60,F,165,60,22.04,Paciente ambulatorio,parcialmente,75,NO HAY FATIGA,Terciario completo,Jubilado,1662,NaN,30,1.4
+333_S_0229,CP0229,COVID,COVID,46,M,183,95,28.37,Paciente ambulatorio,No mucho,95,NO HAY FATIGA,Posgrado,Trabajando tiempo completo,1236,NaN,29,1.1
+333_S_0230,CP0230,COVID,COVID,42,F,164,80,29.74,Paciente ambulatorio,parcialmente,40,FATIGA,Terciario completo,Trabajando medio tiempo,1509,NaN,25,-0.09
+333_S_0232,CP0232,COVID,COVID,34,F,155,74,30.8,Paciente ambulatorio,para nada,60,FATIGA,Secundario completo,Trabajando medio tiempo,1356,NaN,28,1.2
+333_S_0233,CP0233,COVID,COVID,41,F,156,58,23.83,Paciente ambulatorio,NaN,60,FATIGA,Posgrado,Trabajando tiempo completo,1486,55,28,1
+333_S_0234,CP0234,COVID,COVID,41,F,153,85,36.31,Paciente ambulatorio,No mucho,60,FATIGA,Secundario completo,Trabajando tiempo completo,984,NaN,24,-0.2
+333_S_0235,CP0235,COVID,COVID,51,F,160,100,39.06,Paciente ambulatorio,parcialmente,70,FATIGA,Secundario completo,Estudiando,NaN,NaN,28,0.7
+333_S_0236,CP0236,COVID,COVID,60,F,165,57,20.94,Paciente ambulatorio,NaN,65,FATIGA,Universitario incompleto,Trabajando medio tiempo,1274,NaN,23,-0.7
+333_S_0237,CP0237,COVID,COVID,55,F,155,88,36.63,Paciente ambulatorio,No mucho,30,FATIGA,Posgrado,Trabajando tiempo completo,1209,NaN,28,0.7
+333_S_0238,CP0238,COVID,COVID,38,M,178,123,38.82,Paciente ambulatorio,parcialmente,70,FATIGA,Posgrado,Trabajando tiempo completo,1547,998,26,0.2
+333_S_0239,CP0239,CONTROL,CONTROL,48,F,150,52,23.11,No infectado,NaN,90,NO HAY FATIGA,Terciario completo,Trabajando medio tiempo,NaN,NaN,26,0.2
+333_S_0240,CP0240,CONTROL,CONTROL,72,F,152,68,29.43,Paciente ambulatorio,completamente,80,FATIGA,Secundario completo,Jubilado,43570,NaN,26,0.5
+333_S_0241,CP0241,COVID,COVID,38,M,165,79,29.02,Paciente ambulatorio,parcialmente,80,NO HAY FATIGA,Universitario incompleto,Trabajando tiempo completo,NaN,1018,23,-0.7
+333_S_0242,CP0242,COVID,COVID,45,M,177,80,25.54,Paciente ambulatorio,No mucho,65,FATIGA,Posgrado,Haciendo tareas del hogar,1067,246,28,1.2
+333_S_0244,CP0244,CONTROL,CONTROL,46,F,150,52,23.11,No infectado,NaN,90,NO HAY FATIGA,Terciario completo,Trabajando medio tiempo,NaN,NaN,22,-0.8
+333_S_0245,CP0245,COVID,COVID,58,F,158,77,30.84,Paciente ambulatorio,parcialmente,80,FATIGA,Posgrado,Trabajando medio tiempo,1592,313,27,0.5
+333_S_0246,CP0246,CONTROL,CONTROL,51,M,170,95,32.87,No infectado,NaN,90,NO HAY FATIGA,Universitario incompleto,Trabajando tiempo completo,NaN,NaN,27,0.5
+333_S_0247,CP0247,COVID,COVID,47,F,165,69,25.34,Paciente ambulatorio,parcialmente,90,FATIGA,Secundario incompleto,Trabajando tiempo completo,1636,1026,24,-0.4
+333_S_0249,CP0249,COVID,COVID,41,M,170,107,37.02,Paciente ambulatorio,No mucho,95,FATIGA,Secundario incompleto,Trabajando tiempo completo,1422,NaN,26,0.9
+333_S_0250,CP0250,COVID,COVID,40,F,160,77,30.08,Paciente ambulatorio,para nada,40,FATIGA EXTREMA,Universitario incompleto,Trabajando tiempo completo,1423,NaN,27,0.5

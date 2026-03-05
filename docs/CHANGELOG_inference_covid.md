@@ -1,5 +1,133 @@
 # Changelog: COVID → AD Transfer Inference Pipeline
 
+## v3.2 — Fix Tautological Enrichment + ADNI-Derived OOD (2025-07)
+
+### Critical Fix: Tautological Enrichment (§12b)
+
+**Problem:** In v3.1, the Fisher enrichment test in §12b drew its
+"hit set" from within the same 1 026 AD-signature edges, guaranteeing
+near-perfect overlap (OR → ∞, p ≈ 0). This was scientifically
+meaningless.
+
+**Fix:** `scripts/analysis_covid_paper_fixes.py` computes Cliff's δ
+for **all 8 515 upper-triangle edges** (not just signature edges), then
+defines the hit set as the top 5 % by |δ| from the full universe.
+Fisher's exact test measures overlap with the 1 026 AD-signature edges.
+Permutation validation (5 000 shuffles) confirms analytic p-values.
+
+**Results:**
+- **ch0** (Pearson OMST): genuinely enriched (OR ≈ 3.4, p < 1e-23)
+- **ch1** (Pearson Full FisherZ): NOT enriched (OR ≈ 1.0, p = 0.66)
+- **ch2** (MI): NOT enriched (OR ≈ 1.0, p = 0.42)
+
+### New: ADNI-Derived OOD Thresholds (§5)
+
+**Problem:** §5 used within-COVID P90 reconstruction error as OOD
+threshold — circular, since it always flags exactly 10 % as OOD.
+
+**Fix:** VAE reconstruction error is computed on ADNI training data
+(all 5 folds) to derive P90 and P95 thresholds from the training
+distribution. COVID subjects are then flagged against this
+ADNI-derived reference.
+
+**Result:** ADNI-P90 = 0.4886 flags 167/194 subjects as OOD vs
+20/194 with COVID-P90. This reflects genuine domain shift between
+ADNI and COVID cohorts.
+
+### New: Sign-Agreement Metric (§12b)
+
+Tests whether within-COVID edge differences (AD-like − CN-like)
+match the sign of ADNI-derived weights.
+*Result:* ~50 % agreement across all channels (binomial p > 0.05) —
+not above chance.
+
+### Files Changed
+
+```
+notebooks/03_a_inference_covid_from_adcn.ipynb
+  §5   — Load ADNI-derived OOD thresholds; dual COVID-P90 / ADNI-P90
+         quadrant labelling with green reference lines on plots.
+  §12b — Load pre-computed full-universe enrichment + sign agreement.
+  §12 notes — Rewritten to reflect v3.2 findings.
+
+scripts/analysis_covid_paper_fixes.py  (NEW, ~570 lines)
+  Standalone script implementing fixes A–E:
+    A) Full-universe MWU + Fisher + permutation enrichment
+    B) Sign-agreement + Spearman edge-score associations
+    C) ADNI VAE reconstruction → OOD thresholds
+    D) Figure integrity verification
+    E) QC summary text file
+```
+
+### New Output Files
+
+```
+Tables/
+├── covid_vs_control_all_edges_tests_ch{0,1,2}.csv      (8515 rows each)
+├── enrichment_signature_vs_top5pct_universe_ch{0,1,2}.csv
+├── within_covid_sign_agreement_ch{0,1,2}.csv
+├── within_covid_edge_score_assoc_all_edges_ch{0,1,2}.csv
+├── adni_ood_recon_distribution.csv                      (5 folds + ensemble)
+└── qc_summary_v3.2.txt
+
+Tables/covid_ood_quadrants_logreg.csv                    (UPDATED)
+  New columns: ood_flag_adni_p90, ood_flag_adni_p95,
+               quadrant_adni_p90, quadrant_adni_p95
+```
+
+---
+
+## v3.1 — Q1-Grade §12/§13 Refactoring (2025-03-05)
+
+### `notebooks/03_a_inference_covid_from_adcn.ipynb` (41 cells → 43 cells)
+
+Complete rewrite of §12 (edge-level connectome analysis) and §13
+(network connectivity summary) for Q1-journal statistical rigour.
+
+#### §12 — Edge-Level Connectome Analysis (was 3 cells → now 4 cells)
+
+| Change | Details |
+|--------|---------|
+| **Two-tier design** | **Tier 1 (PRIMARY):** Within Long-COVID, AD-like vs CN-like by ADNI Youden threshold. **Tier 2 (SECONDARY):** Long-COVID vs Study Controls (robustness). |
+| **Per-channel** | All edge analyses run per channel — no cross-channel averaging. |
+| **Robust edge mapping** | New `normalize_roi_name()` utility with aggressive normalisation. Maps consensus edges to tensor ROI indices. Validates ≥ 95% mapping rate. Saves `consensus_edges_mapped.csv`. |
+| **Enrichment test** | Fisher's exact test for overlap between COVID-differing edges and AD-signature edges. Reports odds ratio + p-value. |
+| **Null-result guardrails** | Effect-size distribution (Cliff's δ), p-value histogram, top-25 exploratory edges, and enrichment test — all produced even when FDR yields no hits. |
+| **Interpretation notes** | New markdown cell covering domain shift, multiple comparisons, power, effect-size benchmarks (Romano 2006). |
+
+#### §13 — Network Connectivity Summary (was 2 cells → now 3 cells)
+
+| Change | Details |
+|--------|---------|
+| **Fixed network mapping** | Now reads `network_label_in_tensor` column (was checking for non-existent `Yeo17_Network`). Section no longer skipped. |
+| **Three-panel heatmap** | COVID connectivity, Controls connectivity, and difference matrix side-by-side. |
+| **A-priori focus** | Highlights DefaultMode, Limbic, Salience/VentralAttention, and Control networks with dedicated table (`network_pair_apriori_focus.csv`). |
+| **Interpretation notes** | New markdown cell discussing aggregation caveat, channel-averaging caveat, and a-priori network rationale with references. |
+
+#### New/Updated Output Files
+
+```
+Tables/
+├── consensus_edges_mapped.csv                               (NEW)
+├── covid_within_ADlike_vs_CNlike_signature_edges_ch{idx}.csv (NEW, per channel)
+├── covid_vs_control_signature_edges_ch{idx}.csv              (UPDATED, per channel)
+├── covid_vs_control_signature_enrichment_ch{idx}.csv         (NEW, per channel)
+├── network_pair_connectivity_summary.csv                     (UPDATED)
+└── network_pair_apriori_focus.csv                            (NEW)
+
+Figures/
+├── fig13_within_covid_edges_ch{idx}.png          (NEW, per channel)
+├── fig13_covid_vs_control_edges_ch{idx}.png      (NEW, per channel)
+└── fig14_network_connectivity_matrix.png         (UPDATED — 3 panels)
+```
+
+#### Not Changed
+- §0–§11, §14, §F: Unmodified.
+- `scripts/inference_covid_from_adcn.py`: No changes.
+- No new dependencies introduced.
+
+---
+
 ## v3.0 — Doctoral-Grade Clinical Analysis Notebook (2025-06)
 
 ### `notebooks/03_a_inference_covid_from_adcn.ipynb`  (21 cells → 28 cells)

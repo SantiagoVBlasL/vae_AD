@@ -140,7 +140,7 @@ SubjectID,ID,ResearchGroup,Grupo,Age,Sex,Altura,Peso,BMI,CategoríaCOVID,Recuper
 333_S_0169,CP0169,COVID,COVID,44,F,159,80,31.64,Paciente ambulatorio,No mucho,60,FATIGA,Secundario completo,Trabajando tiempo completo,885,75,23,-0.5
 333_S_0170,CP0170,COVID,COVID,38,M,171,100,34.2,Internación moderada,No mucho,75,FATIGA,Universitario incompleto,Trabajando tiempo completo,1445,1202,29,1.5
 333_S_0171,CP0171,COVID,COVID,40,F,162,75,2929.69,Paciente ambulatorio,para nada,30,FATIGA EXTREMA,Terciario incompleto,Otro,1141,NaN,29,1.1
-333_S_0172,CP0172,COVID,COVID,45,M,169,83,29.06,Paciente ambulatorio,No mucho,79,FATIGA,Universitario completo,Trabajando tiempo completo,927,100,2,-1
+333_S_0172,CP0172,COVID,COVID,45,M,169,83,29.06,Paciente ambulatorio,No mucho,79,FATIGA,Universitario completo,Trabajando tiempo completo,927,100,23,-1
 333_S_0173,CP0173,COVID,COVID,54,F,167,68,24.38,Paciente ambulatorio,No mucho,50,FATIGA,Terciario completo,Trabajando tiempo completo,1282,NaN,24,-0.4
 333_S_0174,CP0174,COVID,COVID,62,F,160,58,22.66,Paciente ambulatorio,No mucho,65,FATIGA EXTREMA,Universitario completo,Trabajando tiempo completo,1435,NaN,29,1.1
 333_S_0175,CP0175,COVID,COVID,56,F,167,57,20.44,Paciente ambulatorio,parcialmente,65,FATIGA EXTREMA,Terciario incompleto,Trabajando tiempo completo,1463,NaN,26,0.5

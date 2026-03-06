@@ -1,4 +1,3 @@
-cat > .gitignore <<'EOF'
 # Python
 __pycache__/
 *.py[cod]
@@ -29,12 +28,12 @@ logs/
 wandb/
 mlruns/
 
-# Results / artifacts (NO versionar)
+# Results / artifacts (do not version generated outputs)
 results/**
 !results/README.md
 !results/.gitkeep
 
-# Data (NO versionar tensores pesados)
+# Data (ignore heavy tensors / derived binaries, keep lightweight tabular metadata)
 data/**
 !data/README.md
 !data/.gitkeep
@@ -45,7 +44,7 @@ data/**
 !data/*.yml
 !data/*.yaml
 
-# Big binaries common in ML
+# Big binaries common in ML / neuroimaging
 *.pt
 *.pth
 *.ckpt
@@ -58,20 +57,26 @@ data/**
 *.hdf5
 *.nii
 *.nii.gz
-EOF
 
-# 
+# Backup files
 *.bak
 
 # Local artifacts
 artifacts/
 
-
-# Exported notebooks / reports
+# Exported notebooks
 notebooks/*.html
 
-# Generated plot files from notebooks (not versioned)
-betavae_*.png
+# Generated plots in notebooks root
+notebooks/betavae_*.png
 
-notebooks/ablation_full_run_fast/*
-*.bak
+# Ablation intermediate outputs
+notebooks/ablation_full_run_fast/**
+!notebooks/ablation_full_run_fast/summary_ablation.csv
+!notebooks/ablation_full_run_fast/summary_ablation.json
+
+# Uncomment ONLY if the .ipynb is the sole source of truth
+# notebooks/*.py
+
+# Virtual environments
+.venv/

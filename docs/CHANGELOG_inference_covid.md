@@ -1,5 +1,253 @@
 # Changelog: COVID → AD Transfer Inference Pipeline
 
+## v6.1 — Surgical Cleanup Pass (2025-07)
+
+### Overview
+
+Seven targeted fixes (A–G) applied to `03_a_inference_covid_from_adcn.ipynb`
+bringing it from refactor-draft to paper-grade quality. No new analyses added,
+no cells created or deleted — only edits, reordering, and annotation.
+`NOTEBOOK_VERSION` bumped from `"v6.0"` to `"v6.1"`.
+
+### Fixes Applied
+
+| ID | Title | Cells touched | Summary |
+|----|-------|---------------|---------|
+| A | Outputs index legacy hygiene | §F (cell 39) | Added `_EXPECTED_PREFIXES` set + `_is_expected()` function. Output index now annotates each file as "current" or "legacy". Added `notebook_version` to manifest. |
+| B | Explicit ADNI OOF loading | §2 (cell 4) | Replaced silent `sorted(glob(...))[0]` with explicit single-match requirement. `RuntimeError` if >1 file matches. |
+| C | Canonical consensus-edges source | §2 (cell 4) | Replaced glob for consensus edges with explicit path `consensus_edges_{TARGET_CLF}_integrated_gradients_top50.csv`, consistent with notebook 06's `SUFFIX` variable. |
+| D | Section reordering | §9, §10, §4-app | Moved §9, §10, and §4-app (renamed to Appendix A) after §8 interpretation. New order: §0→…→§8→§9→§10→App-A→§F. |
+| E | S_sig definition consistency | §9 (cells 31–32) | Corrected code comment from "mean absolute connectivity" to "Σ\_e (w\_signed\_e · z\_e), z\_e CN-standardised". Enriched markdown with z\_e definition. |
+| F | Missing interpretation statements | §5 (cell 10), §8-interp (cell 30) | Added metric-disagreement caveat (recon error vs latent distance) in §5. Added sex-confounding caveat in §8 interpretation. |
+| G | Channel-specific enrichment caveat | §10 (cell 33) | Added paragraph noting enrichment is strong in ch0 only, null in ch1/ch2. |
+
+### Section Outline (v6.1)
+
+| § | Title | Cells |
+|---|-------|-------|
+| 0 | Configuration & Seeds | 1 |
+| 1 | Imports & Paths | 1 |
+| 2 | Artifact Discovery | 1 |
+| 3 | Data Integrity & Tensor QC | 1 |
+| 4 | Core Transfer Inference Results | 2 |
+| 5 | OOD Detection & Score–Recon Landscape | 1 |
+| 6 | Ensemble Stability & ADNI Thresholds | 2 |
+| 7 | Threshold Policies, Clinical Correlations, Regression | 5 |
+| 8 | Fatigue-Severity Analysis | 9 (8 code + 1 interpretation md) |
+| 9 | AD-Derived Signature Projection (S\_sig) | 1 |
+| 10 | Pathological Orthogonality (COVID-vs-Control) | 1 |
+| App-A | Calibration Drift & Sensitivity | 2 |
+| F | Final Outputs & Manifest | 1 |
+
+**Total: 39 cells (25 code + 14 markdown), execution counts 1–27.**
+
+### Execution
+
+All cells execute end-to-end on a clean kernel restart (sequential counts 1–27).
+No errors, no warnings.
+
+---
+
+## v6.0 — Strict Scope Separation & Circular-Analysis Removal (2025-07)
+
+### Overview
+
+Refactor of `03_a_inference_covid_from_adcn.ipynb` (50 → 39 cells) enforcing
+strict scope separation from `06_further_analysis.ipynb`. Central question:
+*"How does an AD-trained AD-likeness score behave when transferred to the
+Long-COVID cohort, under substantial domain shift, weak expected classification
+signal, and uncertain biological interpretability?"*
+
+All anatomical interpretability (consensus heatmaps, network-pair decomposition,
+glass brain, chord diagrams) is now exclusively in `06`. All circular within-COVID
+edge testing (AD-like vs CN-like on AD-derived thresholds) has been removed.
+
+### Deleted (11 cells)
+
+| Old § | Cell ID | Reason |
+|-------|---------|--------|
+| §8b | `#VSC-edef10a8` | Network-pair decomposition of S_sig — anatomical = 06's territory |
+| §9 | `#VSC-fc142a5f` + `#VSC-e363d263` | Subject selection markdown+code — no downstream consumer |
+| §11 | `#VSC-8fe7f1c9` + `#VSC-37354aba` | Top-edges ranking markdown+code — duplicates 06 §5–§8 |
+| §12a | `#VSC-480dcce9` | Within-COVID AD-like vs CN-like edge testing — circular/double-dipping (groups defined by score, tested on score-derived edges) |
+| §12 notes | `#VSC-98f39b35` | Associated interpretation notes |
+| §13 | `#VSC-1fb79101` + `#VSC-76daf2ee` | Network connectivity heatmaps intro+code — duplicates 06 |
+| §13 notes | `#VSC-23c4256c` + `#VSC-22987425` | Dead references to removed sections |
+
+### Rewritten / Renumbered (20 cells)
+
+| New § | Content | Change |
+|-------|---------|--------|
+| §0 | Config | `NOTEBOOK_VERSION = "v6.0"`, removed `TOP_K_SUBJECTS`, `PRIMARY_CHANNEL_IDX` |
+| Intro | Central question | Complete rewrite: central question, interpretability caveat box, 03_a/06 scope boundary, section table (§0–§10+§F) |
+| §4 | Core Transfer Results | Reframed as transfer inference, not diagnostic |
+| §9 | AD-Derived Signature Projection | Former §8a — S_sig kept as scalar only, explicit caveats about non-causal interpretation, scope boundary with 06 |
+| §4-app | Calibration Drift & Sensitivity | Former QC cells — distribution shift overlay + threshold sensitivity |
+| §10 | Pathological Orthogonality | Former §12b — COVID-vs-Control enrichment (only defensible edge comparison: independent groups). Removed panel (c) top-25 barplot, removed sign-agreement section. Reduced to 2-panel figure. Added inline ROI mapping code (previously in deleted §12a). |
+| §8a–§8h | Fatigue Analysis | Former §10a–§10h — renumbered only |
+| §F | Final Outputs | Renumbered header |
+
+### Key Methodological Decisions
+
+1. **Within-COVID edge testing removed (§12a):** Groups were defined as AD-like/CN-like
+   by the Youden threshold on the AD-likeness score, then tested on edges derived from
+   the same AD-vs-CN signature. This is circular — any "significant" result would
+   necessarily recapitulate the training signal. Replaced by COVID-vs-Control (§10),
+   which uses independent group labels.
+
+2. **Anatomical interpretability moved to 06:** Network heatmaps, top-edge rankings,
+   network-pair decomposition, glass brain, chord diagrams — all require the AD-vs-CN
+   consensus signature and are authoritative for that domain. They don't belong in a
+   transfer/OOD notebook.
+
+3. **S_sig kept as scalar in §9, not decomposed:** The edge-level decomposition
+   (network pairs, top edges) was moved to 06. Here, S_sig is presented as a single
+   summary statistic with explicit caveats.
+
+4. **Null-honest throughout:** All non-significant results reported with full effect
+   sizes and confidence intervals. No "trending" language. AD-likeness score shows no
+   association with MoCA (ρ = −0.078, q = 0.63), fatigue (KW p = 0.42), or
+   COVID-vs-Control group (MW p = 0.69).
+
+### Section Outline (v6.0)
+
+| § | Title | Cells |
+|---|-------|-------|
+| 0 | Configuration & Seeds | 1 |
+| 1 | Imports & Paths | 1 |
+| 2 | Artifact Discovery | 1 |
+| 3 | Data Integrity & Tensor QC | 1 |
+| 4 | Core Transfer Inference Results | 2 |
+| 5 | OOD Detection & Score–Recon Landscape | 1 |
+| 6 | Ensemble Stability & ADNI Thresholds | 1 |
+| 7 | Threshold Policies, Clinical Correlations, Regression | 5 |
+| 8 | Fatigue-Severity Analysis | 8 |
+| 9 | AD-Derived Signature Projection (S_sig) | 1 |
+| 4-app | Calibration Drift & Sensitivity | 2 |
+| 10 | Pathological Orthogonality (COVID-vs-Control) | 1 |
+| F | Final Outputs & Manifest | 1 |
+
+**Total: 39 cells (25 code + 14 markdown), execution counts 1–27.**
+
+### Execution
+
+All cells execute end-to-end on a clean kernel restart (sequential counts 1–27).
+No errors, no warnings. Figures saved to `inference_covid_paper_output/Figures/`.
+
+---
+
+## v5.0 — Paper-Grade Methodological Refactoring (2025-07)
+
+### Overview
+
+Complete methodological refactoring of `03_a_inference_covid_from_adcn.ipynb`
+(43 → 50 cells) addressing 8 mandatory fixes, adding a new fatigue-severity
+analysis (§10), and removing scientifically unsound sections. Executed
+end-to-end with all cells passing.
+
+### Removed
+
+| Section | Reason |
+|---------|--------|
+| **§10 UMAP** (latent-space visualisation) | Used channel-averaged latent means — masked channel-specific structure. No analytical value beyond exploratory aesthetics. |
+| **§14 Clustering** (k-means on latents) | Same channel-averaging flaw. Clusters were not validated and added no insight beyond what §6b AD-Likeness categories already provide. |
+
+### Corrected (8 Mandatory Fixes)
+
+| # | Fix | Sections | Detail |
+|---|-----|----------|--------|
+| 1 | **Remove latent averaging** | §13 | Network connectivity heatmaps now computed per channel (ch1 primary, ch0, ch2). No cross-channel mean. |
+| 2 | **Remove channel averaging** | §13, §12a, §12b | All edge-level and network-level analyses run per selected channel. Removed any `mean(axis=...)` across channels. |
+| 3 | **Simplify OOD gate** | §5 | Primary gate changed from 4-quadrant system to single ADNI Recon-P95 threshold (0.5186). Recon-only, since P90-distance and logistic-regression gates added no discriminative value. |
+| 4 | **Rename risk → AD-Likeness** | §6b, §7c, §7d | `risk_category` → `adlikeness_category`. Values: Low AD-Likeness (< 0.412), Intermediate [0.412, 0.493), High (≥ 0.493). Avoids causal connotation. |
+| 5 | **Reframe §12a** | §12 markdown, §12 notes | Renamed from "COVID vs Controls" emphasis to "Post-selection characterisation". Framed as exploratory within-COVID stratification, not causal inference. Added post-selection bias caveat. |
+| 6 | **Normalise network pairs** | §8b | Network-pair signature scores now divided by pair cardinality (n_ROIs_i × n_ROIs_j). Prevents large networks from dominating. Loads `roi_info_from_tensor.csv` with `network_label_in_tensor` column (16 networks). |
+| 7 | **Add cohort audit** | §7a.1 | New cell with box-framed audit: COVID/CONTROL counts, missingness per column, CategoriaFAS × Sex/CategoríaCOVID cross-tabulations. |
+| 8 | **Add fatigue analysis** | §10a–§10h | Full new section (8 cells) analysing CategoriaFAS vs AD-likeness score. See below. |
+
+### New: Fatigue-Severity Analysis (§10a–§10h)
+
+Eight cells implementing a complete fatigue analysis pipeline:
+
+| Cell | Content | Key Result |
+|------|---------|------------|
+| §10a | Fatigue cohort audit | N = 150 COVID with valid CategoriaFAS (24 no fatigue, 97 fatigue, 29 extreme) |
+| §10b | Descriptive table by fatigue category | Median AD-Likeness: 0.41 (none), 0.33 (fatigue), 0.38 (extreme) |
+| §10c | Kruskal-Wallis + pairwise Mann-Whitney (BH-FDR) | AD-Likeness H = 1.74, p = 0.42 → **not significant**. Only EQ-VAS significant. |
+| §10d | Ordinal trend (Spearman) + ordinal logistic regression | ρ = −0.03, p = 0.70. Ordinal logit: score β = 0.19, p = 0.87. Sex significant (p = 0.014). |
+| §10e | Multivariable OLS: score ~ FAS + Age + Sex + severity + recovery | R² = 0.028, FAS β = 0.007, p = 0.64. No predictor significant for AD-likeness. |
+| §10f | Extreme vs None focused comparison with Cliff's δ + bootstrap CIs | δ = −0.07 [−0.39, +0.24] (negligible). S_sig shows medium effect (δ = 0.32) but not FDR-significant. |
+| §10g | Sensitivity: ambulatory-only, exclude-ICU, sex-stratified, COVID+CONTROL | All subgroups non-significant (all p > 0.46). |
+| §10h | Publication figures: violin plots, forest plot (Cliff's δ), trend scatter | Three-panel figure + effect-size forest + ordinal trend. |
+
+**Conclusion:** AD-likeness score is not associated with self-reported fatigue
+severity. The β-VAE signature is domain-specific (neurodegenerative connectivity)
+and does not capture post-COVID fatigue mechanisms.
+
+### Narrative Changes
+
+- **Intro/TOC**: Updated to reflect removed §10 UMAP and §14 Clustering sections.
+  New §10 is fatigue analysis. Final section is §F (outputs index).
+- **§0 config**: `NOTEBOOK_VERSION = "v5.0"`, `PRIMARY_CHANNEL_IDX = 0` (OMST).
+- **§12 notes**: Rewritten post-selection characterisation caveat with explicit
+  limitations: non-random selection, classifier-defined groups, circularity risk.
+- **§13 notes**: Channel-specific framing, no cross-channel averaging claim.
+
+### Key Scientific Results (v5.0)
+
+| Finding | Value |
+|---------|-------|
+| ICC(2,1) cross-fold stability | 0.806 |
+| OOD rate (ADNI Recon-P95) | 106/194 (54.6%) |
+| Score–MOCA correlation | ρ = −0.078, q = 0.63 (NS) |
+| Score–fatigue association | KW p = 0.42, ordinal ρ = −0.03 (NS) |
+| Within-COVID edge differences (ch1) | 406/1026 FDR-significant edges |
+| COVID vs Control edge differences | 0 FDR-significant edges |
+| ch0 enrichment (AD-signature ∩ COVID-differing) | OR = 3.37 |
+| AD-Likeness categories | Low: 122, Intermediate: 27, High: 45 |
+
+### Files Changed
+
+```
+notebooks/03_a_inference_covid_from_adcn.ipynb   (43 cells → 50 cells)
+  §0       — Version bump to v5.0, PRIMARY_CHANNEL_IDX = 0
+  §Intro   — Rewritten TOC, removed §10 UMAP / §14 Clustering references
+  §5       — Primary OOD gate → ADNI Recon-P95 (single threshold)
+  §6b      — risk_category → adlikeness_category (Low/Intermediate/High)
+  §7a.1    — NEW cohort audit cell
+  §7c, §7d — risk_category → adlikeness_category throughout
+  §8b      — Cardinality-normalised network decomposition
+  §10a–h   — NEW fatigue analysis (8 cells)
+  §12 md   — Post-selection characterisation framing
+  §12 notes— Post-selection caveat
+  §13 code — Channel-specific network summaries
+  §13 notes— Channel-specific framing
+  §10 UMAP — DELETED (markdown + code)
+  §14 Clust— DELETED (markdown + code)
+```
+
+### New Output Files
+
+```
+Tables/
+├── fatigue_descriptive_by_category.csv
+├── fatigue_kruskal_wallis.csv
+├── fatigue_pairwise_mannwhitney.csv
+├── fatigue_ordinal_trend.csv
+├── fatigue_ordinal_logit_summary.txt
+├── fatigue_multivariable_ols.csv
+├── fatigue_extreme_vs_none.csv
+├── fatigue_sensitivity_analyses.csv
+└── network_pair_connectivity_by_channel.csv   (UPDATED, per-channel)
+
+Figures/
+├── fig_fatigue_violin_panels.png
+├── fig_fatigue_effect_sizes.png
+└── fig_fatigue_trend.png
+```
+
+---
+
 ## v3.2 — Fix Tautological Enrichment + ADNI-Derived OOD (2025-07)
 
 ### Critical Fix: Tautological Enrichment (§12b)

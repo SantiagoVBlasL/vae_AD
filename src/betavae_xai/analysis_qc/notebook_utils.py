@@ -718,7 +718,6 @@ def save_figure(fig, filepath, formats=['png'], **kwargs):
         fig.savefig(output_path, format=fmt, **defaults)
         print(f"Saved: {output_path}")
 
-    plt.close(fig)
 
 
 # ============================================================================

@@ -888,24 +888,34 @@ def main(argv=None) -> int:
         oof_comb=iv["oof_comb"], y=y_d,
     )
 
-    # ── 2b. Incremental value for dFC_AbsDiffMean (ch3) if different ──
-    ch_dfc = 3  # dFC_AbsDiffMean — best within-fold resid from main run
-    if ch_dfc != best_resid_ch:
-        log.info("──── 2b. Incremental value for ch3 dFC_AbsDiffMean ────")
-        iv3 = incremental_value_analysis(
-            tensor, df_d, y_d, ch_dfc, conf_d,
-            args.n_pca, args.n_splits, args.random_state, args.n_boot,
-        )
-        log.info("  Metadata-only AUC:      %.4f", iv3["auc_metadata"])
-        log.info("  Connectome-only AUC:    %.4f  95%%CI [%.4f, %.4f]",
-                 iv3["auc_connectome_resid"], iv3["connectome_ci"][0], iv3["connectome_ci"][1])
-        log.info("  Combined AUC:           %.4f", iv3["auc_combined"])
-        log.info("  DELTA (combined - meta): %.4f  p=%.4f  95%%CI [%.4f, %.4f]",
-                 iv3["delta_comb_vs_meta"], iv3["delta_p"],
-                 iv3["delta_ci"][0], iv3["delta_ci"][1])
-        iv3_save = {k: v for k, v in iv3.items() if not isinstance(v, np.ndarray)}
-        (out / "Tables" / "hardening_D_incremental_value_ch3.json").write_text(
-            json.dumps(iv3_save, indent=2, default=str), encoding="utf-8",
+    # ── 2b. Explicit channel-wise incremental value artifacts (ch2 and ch3) ──
+    # Keep the legacy hardening_D_incremental_value.json as "best_resid_ch",
+    # but always emit explicit MI_KNN (ch2) and dFC_AbsDiffMean (ch3) files
+    # so notebooks cannot silently duplicate one channel under two labels.
+    explicit_channels = [
+        (2, "hardening_D_incremental_value_ch2.json", "MI_KNN"),
+        (3, "hardening_D_incremental_value_ch3.json", "dFC_AbsDiffMean"),
+    ]
+    for ch_idx, fname, ch_label in explicit_channels:
+        if ch_idx == best_resid_ch:
+            iv_ch = iv
+        else:
+            log.info("──── 2b. Incremental value for ch%d %s ────", ch_idx, ch_label)
+            iv_ch = incremental_value_analysis(
+                tensor, df_d, y_d, ch_idx, conf_d,
+                args.n_pca, args.n_splits, args.random_state, args.n_boot,
+            )
+            log.info("  Metadata-only AUC:      %.4f", iv_ch["auc_metadata"])
+            log.info("  Connectome-only AUC:    %.4f  95%%CI [%.4f, %.4f]",
+                     iv_ch["auc_connectome_resid"], iv_ch["connectome_ci"][0], iv_ch["connectome_ci"][1])
+            log.info("  Combined AUC:           %.4f", iv_ch["auc_combined"])
+            log.info("  DELTA (combined - meta): %.4f  p=%.4f  95%%CI [%.4f, %.4f]",
+                     iv_ch["delta_comb_vs_meta"], iv_ch["delta_p"],
+                     iv_ch["delta_ci"][0], iv_ch["delta_ci"][1])
+
+        iv_ch_save = {k: v for k, v in iv_ch.items() if not isinstance(v, np.ndarray)}
+        (out / "Tables" / fname).write_text(
+            json.dumps(iv_ch_save, indent=2, default=str), encoding="utf-8",
         )
 
     # ── 3. Sex-matched subsampling ───────────────────────────

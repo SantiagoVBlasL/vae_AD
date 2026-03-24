@@ -80,3 +80,6 @@ notebooks/ablation_full_run_fast/**
 
 # Virtual environments
 .venv/
+.codex_tmp/
+
+notebooks/archive/

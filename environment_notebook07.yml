@@ -1,0 +1,54 @@
+# Reproducibility spec for notebooks/07_it_information_theory.ipynb (v4)
+# Verified working environment: /home/diego/anaconda3/envs/vae_ad
+# Usage: conda env create -f environment_notebook07.yml
+#        conda activate vae_ad
+#        python scripts/_gen_07_it_notebook.py
+#        jupyter nbconvert --to notebook --execute notebooks/07_it_information_theory.ipynb
+
+name: vae_ad_notebook07
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  # Core Python
+  - python=3.10.18
+
+  # Data / numerics
+  - numpy=1.26.4
+  - pandas=2.2.3
+  - scipy=1.15.3        # >=1.7 required for mannwhitneyu alternative= kwarg
+
+  # ML
+  - scikit-learn=1.7.2  # LedoitWolf, roc_auc_score, calibration_curve
+  - joblib               # >=1.3 for load/dump compatibility
+
+  # Deep learning (for full_recompute mode: re-inference of latents)
+  - pytorch=2.5.1        # torch.load(weights_only=False) works here
+  - pytorch-cuda=12.1    # or cpu-only if no GPU
+
+  # Hyperparameter / optional (needed by betavae_xai import chain)
+  - optuna=4.4.0         # required to import betavae_xai without ImportError
+
+  # Visualisation
+  - matplotlib=3.10.7
+  - seaborn
+
+  # Notebook
+  - ipykernel
+  - nbconvert
+
+  # Misc
+  - tqdm
+  - tabulate             # for LaTeX exports
+
+  # Project package (install after env creation)
+  # pip install -e .      (installs betavae_xai from src/)
+  - pip:
+    - betavae_xai         # local editable install (not on PyPI)
+
+# Notes:
+# - In artifact_review mode (RUN_MODE="artifact_review"), pytorch, optuna,
+#   and betavae_xai are NOT required. Only numpy/scipy/pandas/sklearn/matplotlib
+#   are needed.
+# - SEED=42 is set in the notebook; torch.manual_seed(42) is called after import.
+# - Exact scipy version matters: 1.15.x tested; >=1.7 required.

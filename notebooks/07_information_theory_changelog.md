@@ -1,4 +1,4 @@
-# Changelog — `07_it_information_theory.ipynb`
+# Changelog — `07_information_theory.ipynb`
 
 **v4 date:** 2026-03-18
 **v3 date:** 2026-03-18

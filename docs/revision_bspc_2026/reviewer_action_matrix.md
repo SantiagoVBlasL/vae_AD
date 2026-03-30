@@ -2,7 +2,7 @@
 **Paper**: "Stable Network-Level Functional Connectivity Alterations in
 Alzheimer's Disease Identified via Interpretable Latent Modelling"
 
-*Last updated: 2026-03-30*
+*Last updated: 2026-03-30 (LOSO script complete; smoke test site_130 passed — all 4 leakage assertions clean; PA.1/PA.4 → IN PROGRESS)*
 *Branch: revision_bspc_2026*
 
 ---
@@ -40,10 +40,10 @@ regardless of specific reviewer comments.
 
 | # | Issue identified | Priority | New experiment? | Planned action | Target script / output | Manuscript section | Status |
 |---|-----------------|----------|-----------------|---------------|----------------------|-------------------|--------|
-| PA.1 | **Site-leave-out (LOSO) evaluation required** — Reviewer will almost certainly ask: does the classifier generalise across acquisition sites? The current 5-fold CV does not guarantee site-independence. | P1 | Yes | Run LOSO evaluation on the 2-site main set (Sites 6, 130) and 5-site sensitivity set (Sites 6, 18, 19, 130, 305). Report per-site AUC and aggregate mean ± SD. | `scripts/revision_bspc_2026/run_loso_cv.py`; `results/revision_bspc_2026/loso_evaluation/` | Methods §2.4, Results §3.1, new Supplementary Table | TODO |
+| PA.1 | **Site-leave-out (LOSO) evaluation required** — Reviewer will almost certainly ask: does the classifier generalise across acquisition sites? The current 5-fold CV does not guarantee site-independence. | P1 | Yes | Run LOSO evaluation on the 2-site main set (Sites 6, 130) and 5-site sensitivity set (Sites 6, 18, 19, 130, 305). Report per-site AUC and aggregate mean ± SD. Script implemented and smoke-tested (site 130; all leakage assertions passed). Full primary/strict runs pending. | `scripts/revision_bspc_2026/run_loso_cv.py`; `results/revision_bspc_2026/loso_primary/`, `loso_strict/` | Methods §2.4, Results §3.1, new Supplementary Table | IN PROGRESS |
 | PA.2 | **Severe class × manufacturer confound** (Cramér's V = 0.580, p = 4.2×10⁻¹⁴) — GE MEDICAL SYSTEMS and SIEMENS provide **exclusively AD** subjects (n=21 and n=27 respectively). CN subjects come entirely from Philips. This is a hard confound that limits the interpretability of the classifier and must be disclosed. | P1 | No (narrative + new table) | Add explicit confound disclosure paragraph in Methods. Report manufacturer distribution in Table 1 or Supplementary. Add a SIEMENS/GE-restricted sensitivity analysis (AD-only from those manufacturers vs Philips AD, to check feature leakage). | `results/revision_bspc_2026/site_audit/class_by_manufacturer.csv`; new table in paper | Methods §2.2, Limitations | TODO |
 | PA.3 | **LOSO set is Philips-only** — All 5 LOSO-eligible sites use exclusively Philips scanners. LOSO therefore tests within-manufacturer site generalization only. Cross-manufacturer generalization cannot be evaluated with the current cohort. | P1 | No | State clearly in the LOSO discussion that cross-manufacturer generalization is not tested. Treat manufacturer as a potential source of bias that warrants future work. | Narrative addition to `site_audit_summary.md` and manuscript | Limitations | TODO |
-| PA.4 | **Extremely limited LOSO power** — Only 2 sites meet the main threshold (≥5 per class). Site 130 dominates (33 subjects: 20 CN, 13 AD). Site 6 has 14 subjects (9 CN, 5 AD). This is too few LOSO folds for a robust aggregate estimate. | P1 | Yes | (a) Run 2-fold LOSO on main sites, report both folds individually. (b) Run 5-fold LOSO on sensitivity set. (c) Bootstrap confidence interval on aggregate AUC. (d) Consider pseudo-LOSO: cluster sites by ADNI phase × manufacturer and leave out clusters. | `scripts/revision_bspc_2026/run_loso_cv.py` | Methods §2.4, Results §3.1 | TODO |
+| PA.4 | **Extremely limited LOSO power** — Only 2 sites meet the main threshold (≥5 per class). Site 130 dominates (33 subjects: 20 CN, 13 AD). Site 6 has 14 subjects (9 CN, 5 AD). This is too few LOSO folds for a robust aggregate estimate. | P1 | Yes | (a) Run 2-fold LOSO on strict sites (6, 130), report both folds individually. (b) Run 5-fold LOSO on sensitivity set (sites 6, 18, 19, 130, 305). (c) Bootstrap CI on aggregate AUC included in pooled metrics output. Script implemented; smoke test on site 130 passed (AUC_final=0.592 at chance level — expected, only 20 training epochs; held_in_vae_pool=0, held_in_vae_train=0, held_in_vae_val=0, held_in_clf_train=0). Full primary/strict runs pending. | `scripts/revision_bspc_2026/run_loso_cv.py`; `results/revision_bspc_2026/loso_primary/`, `loso_strict/` | Methods §2.4, Results §3.1 | IN PROGRESS |
 | PA.5 | **3 subjects (1 AD, 2 MCI) dropped at tensor stage** — All SIEMENS. Reason investigated. 013_S_6768 and 003_S_4354 are POST_ASSEMBLY_ORPHAN (individual tensors computed after global assembly); 035_S_7021 is NEVER_PROCESSED (missing raw fMRI data). | P2 | No | Resolved. Document in Methods §2.2: all 3 SIEMENS subjects; 1 AD drop does not alter confound direction. | `scripts/revision_bspc_2026/inspect_dropped_subjects.py`; `results/revision_bspc_2026/dropped_subjects/` | Methods §2.2 (cohort), Supplementary | DONE |
 | PA.6 | **CN exclusively from Philips — CN score calibration may reflect scanner, not biology** — The β-VAE learns a latent space where CN is entirely from Philips. Any "AD-likeness" score for subjects scanned on GE/SIEMENS may be driven by scanner-style differences rather than disease. | P1 | Yes | Scanner-leakage aggregated. Held-out test bacc: connectome_norm=0.537, latent_mu=0.534 (chance=0.333). Leakage present but moderate on held-out test. Flag as core limitation. | `scripts/revision_bspc_2026/aggregate_scanner_leakage.py`; `results/revision_bspc_2026/scanner_leakage/` | Methods §2.3, Limitations | DONE |
 | PA.7 | **COVID transfer result (notebook 03_a)** — AD-likeness scores transferred to Long-COVID show no robust subject-level associations (all null after BH-FDR) but show group-level OMST enrichment (OR=3.37). This is a separate analysis; keep isolated in `notebooks/03_a_inference_covid_from_adcn.ipynb`. | P3 | No | Confirm this notebook is not included in BSPC submission unless specifically requested. Reference if needed as supplementary/preprint. | `notebooks/03_a_inference_covid_from_adcn.ipynb` | Not applicable to BSPC paper | DEFERRED |
@@ -58,7 +58,7 @@ regardless of specific reviewer comments.
 |----------|-----------|----------------------|
 | P1 | PA.2 — Confound disclosure | No |
 | P1 | PA.6 — Scanner leakage aggregation | **DONE** |
-| P1 | PA.1 + PA.4 — LOSO evaluation script | Yes (PA.3 depends on PA.1) |
+| P1 | PA.1 + PA.4 — LOSO evaluation script + smoke test | **IN PROGRESS** (full primary/strict runs pending) |
 | P1 | PA.3 — LOSO scope limitation disclosure | After PA.1 |
 | P2 | PA.5 — Verify dropped subject | **DONE** |
 | P2 | PA.8 — Phase table | No |
@@ -113,3 +113,108 @@ the most defensible LOSO evaluation is:
    > from Philips; AD subjects from Philips, SIEMENS, and GE), cross-manufacturer
    > generalisation cannot be directly evaluated. LOSO evaluation was therefore
    > restricted to Philips sites with sufficient representation of both classes."
+
+---
+
+## LOSO Run Commands (PA.1 / PA.4)
+
+### Smoke test — site 130 only (verified 2026-03-30)
+```bash
+# Fast smoke test: 20 epochs, inner_folds=3, logreg only
+# Outcome: all 4 leakage assertions passed; outputs in results/revision_bspc_2026/loso_smoketest_v2/
+python scripts/revision_bspc_2026/run_loso_cv.py \
+  --global_tensor_path "data/AAL3_dynamicROIs_fmri_tensor_NeuroEnhanced_v6.5.17_AAL3_131ROIs_OMST_GCE_Signed_GrangerLag1_ChNorm_ROIreorderedYeo17_ParallelTuned/GLOBAL_TENSOR_from_AAL3_dynamicROIs_fmri_tensor_NeuroEnhanced_v6.5.17_AAL3_131ROIs_OMST_GCE_Signed_GrangerLag1_ChNorm_ROIreorderedYeo17_ParallelTuned.npz" \
+  --metadata_path data/SubjectsData_AAL3_procesado2.csv \
+  --output_dir results/revision_bspc_2026/loso_smoketest_v2 \
+  --channels_to_use 1 0 2 \
+  --loso_mode custom \
+  --loso_sites 130 \
+  --classifier_types logreg \
+  --classifier_calibrate \
+  --classifier_use_class_weight \
+  --inner_folds 3 \
+  --epochs_vae 20 \
+  --vae_val_split_ratio 0.2 \
+  --early_stopping_patience_vae 0 \
+  --cyclical_beta_n_cycles 2 \
+  --lr_scheduler_type cosine_warm \
+  --lr_scheduler_T0 5 \
+  --lr_scheduler_eta_min 5e-7 \
+  --weight_decay_vae 5e-7 \
+  --batch_size 64 \
+  --beta_vae 6.5 \
+  --dropout_rate_vae 0.15 \
+  --latent_dim 256 \
+  --n_jobs_gridsearch 8 \
+  --save_fold_artefacts \
+  --save_vae_training_history \
+  --gridsearch_scoring roc_auc \
+  --metadata_features Age Sex \
+  --seed 42
+```
+
+### Primary LOSO — 5 sites [6, 18, 19, 130, 305] (full run, pending)
+```bash
+python scripts/revision_bspc_2026/run_loso_cv.py \
+  --global_tensor_path "data/AAL3_dynamicROIs_fmri_tensor_NeuroEnhanced_v6.5.17_AAL3_131ROIs_OMST_GCE_Signed_GrangerLag1_ChNorm_ROIreorderedYeo17_ParallelTuned/GLOBAL_TENSOR_from_AAL3_dynamicROIs_fmri_tensor_NeuroEnhanced_v6.5.17_AAL3_131ROIs_OMST_GCE_Signed_GrangerLag1_ChNorm_ROIreorderedYeo17_ParallelTuned.npz" \
+  --metadata_path data/SubjectsData_AAL3_procesado2.csv \
+  --output_dir results/revision_bspc_2026/loso_primary \
+  --channels_to_use 1 0 2 \
+  --loso_mode primary \
+  --classifier_types logreg \
+  --classifier_calibrate \
+  --classifier_use_class_weight \
+  --inner_folds 5 \
+  --epochs_vae 2560 \
+  --vae_val_split_ratio 0.2 \
+  --early_stopping_patience_vae 240 \
+  --cyclical_beta_n_cycles 32 \
+  --lr_scheduler_type cosine_warm \
+  --lr_scheduler_T0 80 \
+  --lr_scheduler_eta_min 5e-7 \
+  --weight_decay_vae 5e-7 \
+  --batch_size 64 \
+  --beta_vae 6.5 \
+  --dropout_rate_vae 0.15 \
+  --latent_dim 256 \
+  --n_jobs_gridsearch 8 \
+  --save_fold_artefacts \
+  --save_vae_training_history \
+  --qc_check_scanner_leakage \
+  --gridsearch_scoring roc_auc \
+  --metadata_features Age Sex \
+  --seed 42
+```
+
+### Strict LOSO — 2 sites [6, 130] (full run, pending)
+```bash
+python scripts/revision_bspc_2026/run_loso_cv.py \
+  --global_tensor_path "data/AAL3_dynamicROIs_fmri_tensor_NeuroEnhanced_v6.5.17_AAL3_131ROIs_OMST_GCE_Signed_GrangerLag1_ChNorm_ROIreorderedYeo17_ParallelTuned/GLOBAL_TENSOR_from_AAL3_dynamicROIs_fmri_tensor_NeuroEnhanced_v6.5.17_AAL3_131ROIs_OMST_GCE_Signed_GrangerLag1_ChNorm_ROIreorderedYeo17_ParallelTuned.npz" \
+  --metadata_path data/SubjectsData_AAL3_procesado2.csv \
+  --output_dir results/revision_bspc_2026/loso_strict \
+  --channels_to_use 1 0 2 \
+  --loso_mode strict \
+  --classifier_types logreg \
+  --classifier_calibrate \
+  --classifier_use_class_weight \
+  --inner_folds 5 \
+  --epochs_vae 2560 \
+  --vae_val_split_ratio 0.2 \
+  --early_stopping_patience_vae 240 \
+  --cyclical_beta_n_cycles 32 \
+  --lr_scheduler_type cosine_warm \
+  --lr_scheduler_T0 80 \
+  --lr_scheduler_eta_min 5e-7 \
+  --weight_decay_vae 5e-7 \
+  --batch_size 64 \
+  --beta_vae 6.5 \
+  --dropout_rate_vae 0.15 \
+  --latent_dim 256 \
+  --n_jobs_gridsearch 8 \
+  --save_fold_artefacts \
+  --save_vae_training_history \
+  --qc_check_scanner_leakage \
+  --gridsearch_scoring roc_auc \
+  --metadata_features Age Sex \
+  --seed 42
+```

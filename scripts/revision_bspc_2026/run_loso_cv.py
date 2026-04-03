@@ -147,6 +147,25 @@ def _filter_existing_cols(df: pd.DataFrame, cols: List[str]) -> List[str]:
         return []
     return [c for c in cols if c in df.columns]
 
+def _get_prob_1d(estimator, X):
+    if hasattr(estimator, "predict_proba"):
+        p = estimator.predict_proba(X)
+        if p.ndim == 2 and p.shape[1] >= 2:
+            return p[:, 1]
+        return np.asarray(p).ravel()
+    return None
+
+
+def _safe_brier(y_true, y_prob):
+    if y_prob is None:
+        return np.nan
+    y_prob = np.asarray(y_prob, dtype=float).ravel()
+    if not np.all(np.isfinite(y_prob)):
+        return np.nan
+    if y_prob.min() < 0.0 or y_prob.max() > 1.0:
+        return np.nan
+    return brier_score_loss(y_true, y_prob)
+
 
 def _get_score_1d(estimator, X):
     if hasattr(estimator, "predict_proba"):
@@ -321,6 +340,7 @@ def train_vae(
         shuffle=True,
         num_workers=args.num_workers,
         pin_memory=bool(torch.cuda.is_available()),
+        drop_last=True,
     )
     val_loader = None
     if len(val_idx) > 0:
@@ -546,13 +566,15 @@ def train_classifier(
         joblib.dump(final_model, fold_output_dir / f"classifier_{clf_type}_final_pipeline.joblib")
 
     # Evaluate on test set
-    y_score_raw = _get_score_1d(raw_model, X_test)
+    y_score_raw = _get_score_1d(raw_model, X_test)      # score para AUC/PR-AUC
+    y_prob_raw = _get_prob_1d(raw_model, X_test)        # probabilidad cruda si existe
+
     if did_calibrate:
-        y_score_cal = _get_score_1d(final_model, X_test)
+        y_score_cal = _get_prob_1d(final_model, X_test)  # prob calibrada
         y_score_final = y_score_cal
     else:
-        y_score_cal = np.full_like(y_score_raw, np.nan)
-        y_score_final = y_score_raw
+        y_score_cal = np.full_like(np.asarray(y_score_raw, dtype=float), np.nan)
+        y_score_final = y_prob_raw if y_prob_raw is not None else y_score_raw
 
     y_pred = final_model.predict(X_test)
 
@@ -575,8 +597,8 @@ def train_classifier(
     pr_auc_raw = average_precision_score(y_test, y_score_raw)
     auc_final = roc_auc_score(y_test, y_score_final)
     pr_auc_final = average_precision_score(y_test, y_score_final)
-    brier_raw = brier_score_loss(y_test, y_score_raw)
-    brier_final = brier_score_loss(y_test, y_score_final)
+    brier_raw = _safe_brier(y_test, y_prob_raw)
+    brier_final = _safe_brier(y_test, y_score_final)
 
     metrics = {
         "site": site_tag,
@@ -636,8 +658,8 @@ def compute_pooled_metrics(
         "pooled_balanced_accuracy": balanced_accuracy_score(y_true, y_pred),
         "pooled_sensitivity": recall_score(y_true, y_pred, pos_label=1, zero_division=0),
         "pooled_specificity": recall_score(y_true, y_pred, pos_label=0, zero_division=0),
-        "pooled_brier_raw": brier_score_loss(y_true, y_score_raw),
-        "pooled_brier_final": brier_score_loss(y_true, y_score_final),
+        "pooled_brier_raw": _safe_brier(y_true, y_score_raw),
+        "pooled_brier_final": _safe_brier(y_true, y_score_final),
     }
 
     # Calibration curve (final scores)

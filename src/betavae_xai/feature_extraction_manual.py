@@ -1810,12 +1810,67 @@ def _normalize_global_tensor_inter_channel(global_tensor: np.ndarray, train_indi
         return global_tensor, None
 
 def main():
-    # SUGEERENCIA (Mantenibilidad): Usar argparse para configurar parámetros desde la línea de comandos.
-    # parser = argparse.ArgumentParser(description="fMRI Connectivity Feature Extraction Pipeline")
-    # parser.add_argument("--base_path", type=str, default="/home/diego/Escritorio/AAL3", help="Base path for data")
-    # ... otros argumentos ...
-    # args = parser.parse_args()
-    # Luego usar args.base_path en lugar de BASE_PATH_AAL3, etc.
+    # --- CLI overrides: path/config plumbing only. Scientific parameters are unchanged. ---
+    _p = argparse.ArgumentParser(
+        description="fMRI Connectivity Feature Extraction Pipeline (v6.5.17)"
+    )
+    _p.add_argument("--dataset_name",            type=str, default=None,
+                    help="Label for this run (informational only)")
+    _p.add_argument("--data_root",               type=str, default=None,
+                    help="Base data directory (overrides BASE_PATH_AAL3 for input/AAL3 files)")
+    _p.add_argument("--roi_signals_dir",          type=str, default=None,
+                    help="Directory containing ROISignals_<SubjectID>.mat files")
+    _p.add_argument("--subject_metadata_csv",    type=str, default=None,
+                    help="Path to subject metadata CSV (overrides SUBJECT_METADATA_CSV_PATH)")
+    _p.add_argument("--qc_report_csv",           type=str, default=None,
+                    help="Path to QC report CSV (overrides QC_REPORT_CSV_PATH)")
+    _p.add_argument("--aal3_meta_path",          type=str, default=None,
+                    help="Path to AAL3 ROI metadata .txt (overrides AAL3_META_PATH)")
+    _p.add_argument("--aal3_manual_mapping_csv", type=str, default=None,
+                    help="Path to manual Yeo-17 mapping CSV (overrides AAL3_MANUAL_NETWORK_MAPPING_CSV)")
+    _p.add_argument("--output_root",             type=str, default=None,
+                    help="Root directory for output tensors (overrides BASE_PATH_AAL3 for output paths)")
+    _p.add_argument("--output_dir_name",         type=str, default=None,
+                    help="Subdirectory name under output_root for this run (overrides OUTPUT_CONNECTIVITY_DIR_NAME)")
+    _p.add_argument("--max_workers",             type=int, default=None,
+                    help="Override MAX_WORKERS for ProcessPoolExecutor")
+    _args, _ = _p.parse_known_args()
+
+    # Apply to module globals so forked worker processes (Linux) inherit the values.
+    global BASE_PATH_AAL3, ROI_SIGNALS_DIR_PATH_AAL3
+    global SUBJECT_METADATA_CSV_PATH, QC_REPORT_CSV_PATH
+    global AAL3_META_PATH, AAL3_MANUAL_NETWORK_MAPPING_CSV
+    global OUTPUT_CONNECTIVITY_DIR_NAME, MAX_WORKERS
+
+    if _args.data_root is not None:
+        BASE_PATH_AAL3 = Path(_args.data_root)
+        logger.info(f"CLI override: BASE_PATH_AAL3 (data) → {BASE_PATH_AAL3}")
+    if _args.output_root is not None:
+        BASE_PATH_AAL3 = Path(_args.output_root)   # drives tensor path construction in workers
+        BASE_PATH_AAL3.mkdir(parents=True, exist_ok=True)
+        logger.info(f"CLI override: BASE_PATH_AAL3 (output root) → {BASE_PATH_AAL3}")
+    if _args.roi_signals_dir is not None:
+        ROI_SIGNALS_DIR_PATH_AAL3 = Path(_args.roi_signals_dir)
+        logger.info(f"CLI override: ROI_SIGNALS_DIR_PATH_AAL3 → {ROI_SIGNALS_DIR_PATH_AAL3}")
+    if _args.subject_metadata_csv is not None:
+        SUBJECT_METADATA_CSV_PATH = Path(_args.subject_metadata_csv)
+        logger.info(f"CLI override: SUBJECT_METADATA_CSV_PATH → {SUBJECT_METADATA_CSV_PATH}")
+    if _args.qc_report_csv is not None:
+        QC_REPORT_CSV_PATH = Path(_args.qc_report_csv)
+        logger.info(f"CLI override: QC_REPORT_CSV_PATH → {QC_REPORT_CSV_PATH}")
+    if _args.aal3_meta_path is not None:
+        AAL3_META_PATH = Path(_args.aal3_meta_path)
+        logger.info(f"CLI override: AAL3_META_PATH → {AAL3_META_PATH}")
+    if _args.aal3_manual_mapping_csv is not None:
+        AAL3_MANUAL_NETWORK_MAPPING_CSV = Path(_args.aal3_manual_mapping_csv)
+        logger.info(f"CLI override: AAL3_MANUAL_NETWORK_MAPPING_CSV → {AAL3_MANUAL_NETWORK_MAPPING_CSV}")
+    if _args.output_dir_name is not None:
+        OUTPUT_CONNECTIVITY_DIR_NAME = _args.output_dir_name
+        logger.info(f"CLI override: OUTPUT_CONNECTIVITY_DIR_NAME → {OUTPUT_CONNECTIVITY_DIR_NAME}")
+    if _args.max_workers is not None:
+        MAX_WORKERS = _args.max_workers
+        logger.info(f"CLI override: MAX_WORKERS → {MAX_WORKERS}")
+    # --- end CLI overrides ---
 
     try:
         logger.info(f"RUNTIME NetworkX version being used: {nx.__version__}")
@@ -1853,8 +1908,12 @@ def main():
     if USE_PEARSON_OMST_CHANNEL and not (OMST_PYTHON_LOADED and orthogonal_minimum_spanning_tree is not None):
         logger.warning(f"Note: OMST from dyconnmap could not be loaded. '{PEARSON_OMST_FALLBACK_NAME}' will be used instead of '{PEARSON_OMST_CHANNEL_NAME_PRIMARY}' if enabled and fallback is selected.")
 
-    if not BASE_PATH_AAL3.exists() or not ROI_SIGNALS_DIR_PATH_AAL3.exists():
-        logger.critical(f"CRITICAL: Base AAL3 path ({BASE_PATH_AAL3}) or ROI signals directory ({ROI_SIGNALS_DIR_PATH_AAL3}) not found. Aborting.")
+    # BASE_PATH_AAL3 is the output root when --output_root is supplied (already mkdir'd above);
+    # in the historical default case it is the data root which must pre-exist.
+    # Either way ensure it exists before the downstream mkdir calls.
+    BASE_PATH_AAL3.mkdir(parents=True, exist_ok=True)
+    if not ROI_SIGNALS_DIR_PATH_AAL3.exists():
+        logger.critical(f"CRITICAL: ROI signals directory not found: {ROI_SIGNALS_DIR_PATH_AAL3}. Aborting.")
         return
 
     subject_metadata_df = load_metadata(SUBJECT_METADATA_CSV_PATH, QC_REPORT_CSV_PATH)

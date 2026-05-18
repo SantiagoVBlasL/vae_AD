@@ -27,6 +27,7 @@ else:
 import argparse
 import copy
 import gc
+import json
 import subprocess
 import time
 from typing import Any, Dict, List, Optional
@@ -97,6 +98,15 @@ DEFAULT_CHANNEL_NAMES = [
     'dFC_AbsDiffMean', 'dFC_StdDev', 'DistanceCorr', 'Granger_F_lag1' # <<< Lista actualizada para ser completa
 ]
 
+CLASSIFIER_N_ITER_ARG_MAP = {
+    "logreg": "n_iter_logreg",
+    "svm": "n_iter_svm",
+    "rf": "n_iter_rf",
+    "gb": "n_iter_gb",
+    "xgb": "n_iter_xgb",
+    "mlp": "n_iter_mlp",
+}
+
 def _extend_channel_names_to_tensor(n_chan_tensor: int, base_names: List[str]) -> List[str]:
     """
     Asegura que la lista de nombres tenga longitud == n_chan_tensor.
@@ -116,6 +126,74 @@ def _filter_existing_cols(df: pd.DataFrame, cols: List[str]) -> List[str]:
         return []
     return [c for c in cols if c in df.columns]
 
+
+def _validate_n_iter_value(classifier_type: str, value: Any) -> int:
+    """Validate optional per-classifier Optuna trial override."""
+    if isinstance(value, bool):
+        raise ValueError(f"n_iter for {classifier_type!r} must be a positive integer, got bool.")
+    try:
+        n_iter = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"n_iter for {classifier_type!r} must be a positive integer, got {value!r}.") from None
+    if n_iter <= 0:
+        raise ValueError(f"n_iter for {classifier_type!r} must be > 0, got {n_iter}.")
+    return n_iter
+
+
+def _parse_classifier_n_iter_overrides(args: argparse.Namespace) -> Dict[str, int]:
+    """
+    Parse optional per-classifier Optuna trial budgets.
+
+    Backward compatibility: when all values are omitted, returns an empty dict and
+    the classifier factory defaults remain in force exactly as before.
+    """
+    valid_classifiers = set(get_available_classifiers())
+    overrides: Dict[str, int] = {}
+    json_payload = getattr(args, "classifier_n_iter_json", None)
+    if json_payload:
+        try:
+            parsed = json.loads(json_payload)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid --classifier_n_iter_json: {e}") from e
+        if not isinstance(parsed, dict):
+            raise ValueError("--classifier_n_iter_json must decode to an object, e.g. '{\"logreg\":100,\"svm\":300}'.")
+        for key, value in parsed.items():
+            classifier_type = str(key).lower()
+            if classifier_type not in valid_classifiers:
+                raise ValueError(
+                    f"Unknown classifier in --classifier_n_iter_json: {classifier_type!r}. "
+                    f"Valid classifiers: {sorted(valid_classifiers)}"
+                )
+            overrides[classifier_type] = _validate_n_iter_value(classifier_type, value)
+
+    for classifier_type, arg_name in CLASSIFIER_N_ITER_ARG_MAP.items():
+        value = getattr(args, arg_name, None)
+        if value is not None:
+            if classifier_type not in valid_classifiers:
+                raise ValueError(f"Unsupported n_iter flag for unavailable classifier: {classifier_type}")
+            overrides[classifier_type] = _validate_n_iter_value(classifier_type, value)
+    return overrides
+
+
+def _resolve_classifier_n_iter(
+    args: argparse.Namespace,
+    classifier_type: str,
+    factory_default_n_iter: int,
+    max_trials: int = 1000,
+) -> tuple[int, Optional[int], str]:
+    """Return effective Optuna trials while preserving old behavior by default."""
+    classifier_key = classifier_type.lower()
+    overrides: Dict[str, int] = getattr(args, "classifier_n_iter_overrides", {}) or {}
+    requested_override = overrides.get(classifier_key)
+    if requested_override is None:
+        requested_n_iter = int(factory_default_n_iter)
+        source = "factory_default"
+    else:
+        requested_n_iter = int(requested_override)
+        source = "cli_override"
+    effective_n_trials = min(requested_n_iter, int(max_trials))
+    return effective_n_trials, requested_override, source
+
 def _get_score_1d(estimator, X):
     """
     Devuelve un score 1D para AUC/PR-AUC:
@@ -133,13 +211,63 @@ def _get_score_1d(estimator, X):
         return np.asarray(s).ravel()
     return np.asarray(estimator.predict(X)).astype(float).ravel()
 
-def vae_loss_function(recon_x, x, mu, logvar, beta=1.0):
+RECON_LOSS_MODE_CURRENT = "mse_sum_batchmean_current"
+RECON_LOSS_MODE_OFFDIAG_CHANNELMEAN = "offdiag_channelmean_sum"
+RECON_LOSS_MODES = (RECON_LOSS_MODE_CURRENT, RECON_LOSS_MODE_OFFDIAG_CHANNELMEAN)
+
+
+def _offdiag_mask_for_tensor(x: torch.Tensor) -> torch.Tensor:
+    if x.ndim != 4:
+        raise ValueError(f"Expected 4D tensor [B,C,H,W], got shape={tuple(x.shape)}")
+    if x.shape[-1] != x.shape[-2]:
+        raise ValueError(f"Expected square matrices, got shape={tuple(x.shape)}")
+    n_rois = int(x.shape[-1])
+    return ~torch.eye(n_rois, dtype=torch.bool, device=x.device)
+
+
+def vae_reconstruction_loss(recon_x: torch.Tensor, x: torch.Tensor, mode: str = RECON_LOSS_MODE_CURRENT) -> torch.Tensor:
+    """Return reconstruction loss with explicit scale semantics.
+
+    - mse_sum_batchmean_current: historical behavior, sum over all channels and
+      pixels divided by batch size.
+    - offdiag_channelmean_sum: sum squared error over off-diagonal entries
+      within each channel, then average across channels and batch. For identical
+      per-channel errors this preserves the approximate single-channel scale and
+      avoids linear growth with channel count.
+    """
+    if mode == RECON_LOSS_MODE_CURRENT:
+        return nn.functional.mse_loss(recon_x, x, reduction='sum') / x.shape[0]
+    if mode == RECON_LOSS_MODE_OFFDIAG_CHANNELMEAN:
+        offdiag_mask = _offdiag_mask_for_tensor(x)
+        diff2 = (recon_x - x).pow(2)
+        per_subject_channel_sum = diff2[:, :, offdiag_mask].sum(dim=-1)
+        return per_subject_channel_sum.mean(dim=1).mean()
+    raise ValueError(f"Unknown recon_loss_mode={mode!r}. Valid modes: {RECON_LOSS_MODES}")
+
+
+def describe_recon_loss_mode(mode: str, n_channels: int, n_rois: int) -> str:
+    offdiag_elements = int(n_rois * (n_rois - 1))
+    all_elements = int(n_channels * n_rois * n_rois)
+    if mode == RECON_LOSS_MODE_CURRENT:
+        return (
+            f"{mode}: sum over all channels and pixels / batch; "
+            f"scale_terms_per_subject={all_elements}"
+        )
+    if mode == RECON_LOSS_MODE_OFFDIAG_CHANNELMEAN:
+        return (
+            f"{mode}: off-diagonal squared-error sum per channel, mean across channels and batch; "
+            f"offdiag_elements_per_channel={offdiag_elements}, scale_terms_per_subject~={offdiag_elements}"
+        )
+    return f"{mode}: unknown scale"
+
+
+def vae_loss_function(recon_x, x, mu, logvar, beta=1.0, recon_loss_mode: str = RECON_LOSS_MODE_CURRENT):
     recon_x = recon_x.float()
     x       = x.float()
     mu      = mu.float()
     logvar  = logvar.float()
 
-    recon_loss = nn.functional.mse_loss(recon_x, x, reduction='sum') / x.shape[0]
+    recon_loss = vae_reconstruction_loss(recon_x, x, mode=recon_loss_mode)
     kld_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1).mean()
     total_loss = recon_loss + beta * kld_loss
     return total_loss, recon_loss.detach(), kld_loss.detach()
@@ -343,7 +471,13 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
         vae_internal_val_indices_local_to_pool = np.array([], dtype=int)
 
         # columnas candidatas para balancear train/val del VAE
-        vae_strat_candidates = ['ResearchGroup_Mapped', 'Sex', 'Age_Group']
+        if args.vae_stratify_cols:
+            vae_strat_candidates = ['ResearchGroup_Mapped']
+            for col in args.vae_stratify_cols:
+                if col not in vae_strat_candidates:
+                    vae_strat_candidates.append(col)
+        else:
+            vae_strat_candidates = ['ResearchGroup_Mapped', 'Sex', 'Age_Group']
         available_cols = [c for c in vae_strat_candidates if c in vae_train_pool_df.columns]
 
         if len(available_cols) == 0:
@@ -436,6 +570,14 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
             dropout_rate=args.dropout_rate_vae, use_layernorm_fc=args.use_layernorm_vae_fc,
             num_conv_layers_encoder=args.num_conv_layers_encoder, decoder_type=args.decoder_type
         ).to(device)
+        n_rois_for_loss = int(current_global_tensor.shape[-1])
+        offdiag_elements_for_loss = int(n_rois_for_loss * (n_rois_for_loss - 1))
+        logger.info(
+            f"  {fold_idx_str} VAE objective: recon_loss_mode={args.recon_loss_mode}, "
+            f"final_activation={args.vae_final_activation}, input_channels={num_input_channels_for_vae}, "
+            f"n_rois={n_rois_for_loss}, offdiag_elements_per_channel={offdiag_elements_for_loss}, "
+            f"reconstruction_loss_scale={describe_recon_loss_mode(args.recon_loss_mode, num_input_channels_for_vae, n_rois_for_loss)}"
+        )
         
         optimizer_vae = optim.AdamW(vae_fold_k.parameters(), lr=args.lr_vae, weight_decay=args.weight_decay_vae, amsgrad=True)
         scheduler_vae = None
@@ -462,6 +604,97 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
         best_epoch = 0
         epochs_no_improve = 0
         best_model_state_dict = None
+        periodic_vae_checkpoint_rows: List[Dict[str, Any]] = []
+        periodic_vae_checkpoint_dir: Optional[Path] = None
+        checkpoint_start_epoch = int(args.save_vae_checkpoints_start_epoch or 0)
+        legacy_checkpoint_cadence_options = (
+            args.save_vae_checkpoints_start_epoch is None
+            and args.save_vae_checkpoints_keep_last_n is None
+            and not bool(args.save_vae_checkpoints_always_keep_best)
+            and not bool(args.save_vae_checkpoints_always_keep_final)
+        )
+        final_epoch_seen = 0
+        if args.save_vae_checkpoints_every_n_epochs is not None:
+            periodic_vae_checkpoint_dir = fold_output_dir / "vae_checkpoints"
+            periodic_vae_checkpoint_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(
+                f"  {fold_idx_str} Guardado periódico de checkpoints VAE activado: "
+                f"cada {args.save_vae_checkpoints_every_n_epochs} épocas, "
+                f"desde epoch {checkpoint_start_epoch} -> {periodic_vae_checkpoint_dir}"
+            )
+
+        def _history_value_at_epoch(key: str, epoch_num: int) -> Optional[float]:
+            values = history_data.get(key, [])
+            if epoch_num <= 0 or epoch_num > len(values):
+                return None
+            value = values[epoch_num - 1]
+            try:
+                if np.isnan(value):
+                    return None
+            except TypeError:
+                pass
+            return float(value)
+
+        def _checkpoint_row(
+            checkpoint_path: Path,
+            checkpoint_epoch: int,
+            checkpoint_type: str,
+            current_beta_value: Optional[float],
+            protected: bool = False,
+        ) -> Dict[str, Any]:
+            return {
+                "fold": int(fold_idx + 1),
+                "epoch": int(checkpoint_epoch),
+                "path": str(checkpoint_path),
+                "checkpoint_path": str(checkpoint_path),
+                "checkpoint_type": str(checkpoint_type),
+                "checkpoint_reason": str(checkpoint_type),
+                "current_beta": float(current_beta_value) if current_beta_value is not None else None,
+                "train_loss": _history_value_at_epoch("train_loss", checkpoint_epoch),
+                "train_recon": _history_value_at_epoch("train_recon", checkpoint_epoch),
+                "train_kld": _history_value_at_epoch("train_kld", checkpoint_epoch),
+                "val_loss": _history_value_at_epoch("val_loss", checkpoint_epoch),
+                "val_recon": _history_value_at_epoch("val_recon", checkpoint_epoch),
+                "val_kld": _history_value_at_epoch("val_kld", checkpoint_epoch),
+                "val_loss_beta_max": _history_value_at_epoch("val_loss_modelsel", checkpoint_epoch),
+                "val_loss_modelsel": _history_value_at_epoch("val_loss_modelsel", checkpoint_epoch),
+                "best_epoch_so_far": int(best_epoch),
+                "best_val_loss_modelsel_so_far": float(best_val_loss) if np.isfinite(best_val_loss) else None,
+                "protected_from_pruning": bool(protected),
+                "status": "kept",
+                "kept_deleted_status": "kept",
+                "deleted_utc": None,
+            }
+
+        def _prune_periodic_vae_checkpoints() -> None:
+            keep_last_n = args.save_vae_checkpoints_keep_last_n
+            if keep_last_n is None:
+                return
+            keep_last_n = int(keep_last_n)
+            kept_periodic_rows = [
+                row for row in periodic_vae_checkpoint_rows
+                if row.get("status") == "kept" and row.get("checkpoint_type") == "periodic"
+            ]
+            if len(kept_periodic_rows) <= keep_last_n:
+                return
+            kept_periodic_rows = sorted(kept_periodic_rows, key=lambda row: int(row.get("epoch") or 0))
+            rows_to_delete = kept_periodic_rows[:-keep_last_n]
+            for row in rows_to_delete:
+                if row.get("protected_from_pruning"):
+                    continue
+                checkpoint_path = Path(str(row.get("path")))
+                try:
+                    if checkpoint_path.exists():
+                        checkpoint_path.unlink()
+                    row["status"] = "deleted"
+                    row["kept_deleted_status"] = "deleted"
+                    row["deleted_utc"] = datetime.now(timezone.utc).isoformat()
+                    logger.info(f"  {fold_idx_str} Checkpoint VAE periódico eliminado por keep_last_n: {checkpoint_path}")
+                except Exception as e:
+                    row["status"] = "delete_failed"
+                    row["kept_deleted_status"] = "delete_failed"
+                    row["delete_error"] = str(e)
+                    logger.warning(f"  {fold_idx_str} No se pudo eliminar checkpoint periódico {checkpoint_path}: {e}")
         
         # Listas para guardar el historial completo
         history_data = {
@@ -471,12 +704,15 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
             "val_loss_modelsel": [],
 
             # para debug
-            "beta": []
+            "beta": [],
+            "train_kld_over_recon": [], "train_beta_kld_over_recon": [],
+            "val_kld_over_recon": [], "val_beta_kld_over_recon": []
         }
 
         scaler = GradScaler(enabled=(device.type == 'cuda'))
 
         for epoch in range(args.epochs_vae):
+            should_stop_vae = False
             vae_fold_k.train()
             # Acumuladores para la época de entrenamiento
             epoch_train_loss, epoch_train_recon, epoch_train_kld = 0.0, 0.0, 0.0 # ⬅️ NUEVO
@@ -494,7 +730,9 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
 
                 with autocast(enabled=(device.type == 'cuda')):
                     recon_batch, mu, logvar, _ = vae_fold_k(data)
-                    loss, recon, kld = vae_loss_function(recon_batch, data, mu, logvar, beta=current_beta)
+                    loss, recon, kld = vae_loss_function(
+                        recon_batch, data, mu, logvar, beta=current_beta, recon_loss_mode=args.recon_loss_mode
+                    )
                 
                 scaler.scale(loss).backward()
                 scaler.step(optimizer_vae)
@@ -513,12 +751,23 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
             history_data["train_loss"].append(epoch_train_loss / len(vae_train_loader.dataset))
             history_data["train_recon"].append(epoch_train_recon / len(vae_train_loader.dataset))
             history_data["train_kld"].append(epoch_train_kld / len(vae_train_loader.dataset))
+            train_kld_over_recon = (
+                history_data["train_kld"][-1] / history_data["train_recon"][-1]
+                if history_data["train_recon"][-1] else np.nan
+            )
+            train_beta_kld_over_recon = (
+                current_beta * history_data["train_kld"][-1] / history_data["train_recon"][-1]
+                if history_data["train_recon"][-1] else np.nan
+            )
+            history_data["train_kld_over_recon"].append(train_kld_over_recon)
+            history_data["train_beta_kld_over_recon"].append(train_beta_kld_over_recon)
             history_data["beta"].append(current_beta)
             
             log_msg = (f"  {fold_idx_str} FOLD{fold_idx+1}: E{epoch+1}/{args.epochs_vae}, "
                        f"TrL(curβ): {history_data['train_loss'][-1]:.2f} "
                        f"(R: {history_data['train_recon'][-1]:.2f}, "
                        f"KLD: {history_data['train_kld'][-1]:.2f}), "
+                       f"KLD/R={train_kld_over_recon:.4f}, βKLD/R={train_beta_kld_over_recon:.4f}, "
                        f"β={current_beta:.3f}, LR={optimizer_vae.param_groups[0]['lr']:.2e}")
 
 
@@ -533,7 +782,8 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
                             recon_val, mu_val, logvar_val, _ = vae_fold_k(val_data)
                             # forward con el beta actual (lo que realmente entrenamos esta época)
                             v_loss_curBeta, v_recon, v_kld = vae_loss_function(
-                                recon_val, val_data, mu_val, logvar_val, beta=current_beta
+                                recon_val, val_data, mu_val, logvar_val,
+                                beta=current_beta, recon_loss_mode=args.recon_loss_mode
                             )
 
                             epoch_val_loss_curBeta += v_loss_curBeta.item() * val_data.size(0)
@@ -549,6 +799,8 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
                # promedios puros de los componentes
                 avg_val_recon = epoch_val_recon / N_val
                 avg_val_kld   = epoch_val_kld   / N_val
+                val_kld_over_recon = avg_val_kld / avg_val_recon if avg_val_recon else np.nan
+                val_beta_kld_over_recon = current_beta * avg_val_kld / avg_val_recon if avg_val_recon else np.nan
 
                 # métrica CONSISTENTE entre épocas:
                 # simulamos "cómo le iría" al modelo si usáramos siempre beta_max (= args.beta_vae)
@@ -559,10 +811,13 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
                 history_data["val_recon"].append(avg_val_recon)
                 history_data["val_kld"].append(avg_val_kld)
                 history_data["val_loss_modelsel"].append(avg_val_loss_betaMax)
+                history_data["val_kld_over_recon"].append(val_kld_over_recon)
+                history_data["val_beta_kld_over_recon"].append(val_beta_kld_over_recon)
 
                 log_msg += (
                     f", ValL(curβ): {avg_val_loss_curBeta:.2f} "
-                    f"(R: {avg_val_recon:.2f}, KLD: {avg_val_kld:.2f}) "
+                    f"(R: {avg_val_recon:.2f}, KLD: {avg_val_kld:.2f}, "
+                    f"KLD/R={val_kld_over_recon:.4f}, βKLD/R={val_beta_kld_over_recon:.4f}) "
                     f"| ValL(βmax): {avg_val_loss_betaMax:.2f}"
                 )
 
@@ -593,15 +848,66 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
                         f"  {fold_idx_str} Early stopping VAE en epoch {epoch+1}. "
                         f"Mejor ValL(βmax): {best_val_loss:.4f} (época {best_epoch})"
                     )
-                    break
+                    should_stop_vae = True
             else: 
                 # Sin validación -> rellenamos NaN para mantener forma
-                for key in ["val_loss", "val_recon", "val_kld", "val_loss_modelsel"]:
+                for key in ["val_loss", "val_recon", "val_kld", "val_loss_modelsel", "val_kld_over_recon", "val_beta_kld_over_recon"]:
                     history_data[key].append(np.nan)
                 best_model_state_dict = copy.deepcopy(vae_fold_k.state_dict())
 
             if (epoch + 1) % args.log_interval_epochs_vae == 0 or epoch == args.epochs_vae - 1:
                 logger.info(log_msg)
+
+            final_epoch_seen = epoch + 1
+            if periodic_vae_checkpoint_dir is not None:
+                checkpoint_interval = int(args.save_vae_checkpoints_every_n_epochs)
+                epoch_num = epoch + 1
+                is_terminal_epoch = (epoch == args.epochs_vae - 1) or should_stop_vae
+                is_interval_epoch = epoch_num >= checkpoint_start_epoch and (epoch_num % checkpoint_interval == 0)
+                save_periodic = (
+                    is_interval_epoch
+                    or is_terminal_epoch
+                )
+                if save_periodic:
+                    checkpoint_type = "early_stop" if should_stop_vae else ("final" if epoch == args.epochs_vae - 1 else "periodic")
+                    protected = (
+                        (checkpoint_type == "final" and bool(args.save_vae_checkpoints_always_keep_final))
+                        or (checkpoint_type == "early_stop" and bool(args.save_vae_checkpoints_always_keep_final))
+                    )
+                    if legacy_checkpoint_cadence_options:
+                        checkpoint_path = periodic_vae_checkpoint_dir / f"vae_checkpoint_fold_{fold_idx+1}_epoch_{epoch_num:04d}.pt"
+                    else:
+                        checkpoint_path = periodic_vae_checkpoint_dir / f"vae_checkpoint_fold_{fold_idx+1}_{checkpoint_type}_epoch_{epoch_num:04d}.pt"
+                    checkpoint_payload = {
+                        "model_state_dict": {k: v.detach().cpu() for k, v in vae_fold_k.state_dict().items()},
+                        "fold": int(fold_idx + 1),
+                        "epoch": int(epoch_num),
+                        "current_beta": float(current_beta),
+                        "train_loss": float(history_data["train_loss"][-1]),
+                        "train_recon": float(history_data["train_recon"][-1]),
+                        "train_kld": float(history_data["train_kld"][-1]),
+                        "val_loss": float(history_data["val_loss"][-1]),
+                        "val_recon": float(history_data["val_recon"][-1]),
+                        "val_kld": float(history_data["val_kld"][-1]),
+                        "val_loss_modelsel": float(history_data["val_loss_modelsel"][-1]),
+                        "val_loss_beta_max": float(history_data["val_loss_modelsel"][-1]),
+                        "best_epoch_so_far": int(best_epoch),
+                        "best_val_loss_modelsel_so_far": float(best_val_loss) if np.isfinite(best_val_loss) else None,
+                        "checkpoint_type": checkpoint_type,
+                        "checkpoint_reason": checkpoint_type,
+                    }
+                    try:
+                        torch.save(checkpoint_payload, checkpoint_path)
+                        periodic_vae_checkpoint_rows.append(
+                            _checkpoint_row(checkpoint_path, epoch_num, checkpoint_type, current_beta, protected=protected)
+                        )
+                        logger.info(f"  {fold_idx_str} Checkpoint VAE {checkpoint_type} guardado: {checkpoint_path}")
+                        _prune_periodic_vae_checkpoints()
+                    except Exception as e:
+                        logger.warning(f"  {fold_idx_str} No se pudo guardar checkpoint VAE {checkpoint_path.name}: {e}")
+
+            if should_stop_vae:
+                break
         
         
         if best_model_state_dict:
@@ -618,6 +924,59 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
         vae_model_fname = f"vae_model_fold_{fold_idx+1}.pt"
         torch.save(vae_fold_k.state_dict(), fold_output_dir / vae_model_fname)
         logger.info(f"  {fold_idx_str} Modelo VAE guardado en: {fold_output_dir / vae_model_fname}")
+
+        if args.save_vae_checkpoints_every_n_epochs is not None:
+            if args.save_vae_checkpoints_always_keep_best and best_epoch > 0:
+                periodic_vae_checkpoint_rows.append(
+                    _checkpoint_row(
+                        fold_output_dir / vae_model_fname,
+                        best_epoch,
+                        "best",
+                        _history_value_at_epoch("beta", best_epoch),
+                        protected=True,
+                    )
+                )
+            if args.save_vae_checkpoints_always_keep_final and final_epoch_seen > 0:
+                already_recorded_final = any(
+                    row.get("epoch") == final_epoch_seen
+                    and row.get("checkpoint_type") in {"final", "early_stop"}
+                    and row.get("status") == "kept"
+                    for row in periodic_vae_checkpoint_rows
+                )
+                if not already_recorded_final:
+                    periodic_vae_checkpoint_rows.append(
+                        _checkpoint_row(
+                            fold_output_dir / vae_model_fname if final_epoch_seen == best_epoch else periodic_vae_checkpoint_dir / f"vae_checkpoint_fold_{fold_idx+1}_final_epoch_{final_epoch_seen:04d}.pt",
+                            final_epoch_seen,
+                            "final",
+                            _history_value_at_epoch("beta", final_epoch_seen),
+                            protected=True,
+                        )
+                    )
+            manifest_csv = fold_output_dir / f"vae_checkpoint_manifest_fold_{fold_idx+1}.csv"
+            manifest_json = fold_output_dir / f"vae_checkpoint_manifest_fold_{fold_idx+1}.json"
+            manifest_payload = {
+                "fold": int(fold_idx + 1),
+                "checkpoint_interval_epochs": int(args.save_vae_checkpoints_every_n_epochs),
+                "checkpoint_start_epoch": int(checkpoint_start_epoch),
+                "checkpoint_keep_last_n": args.save_vae_checkpoints_keep_last_n,
+                "checkpoint_always_keep_best": bool(args.save_vae_checkpoints_always_keep_best),
+                "checkpoint_always_keep_final": bool(args.save_vae_checkpoints_always_keep_final),
+                "checkpoint_dir": str(periodic_vae_checkpoint_dir),
+                "final_best_checkpoint_path": str(fold_output_dir / vae_model_fname),
+                "final_best_checkpoint_format": "raw_state_dict",
+                "periodic_checkpoint_format": "dict_with_model_state_dict_and_epoch_metadata",
+                "n_checkpoints_manifest_rows": len(periodic_vae_checkpoint_rows),
+                "n_checkpoints_kept": int(sum(1 for row in periodic_vae_checkpoint_rows if row.get("status") == "kept")),
+                "n_checkpoints_deleted": int(sum(1 for row in periodic_vae_checkpoint_rows if row.get("status") == "deleted")),
+                "checkpoints": periodic_vae_checkpoint_rows,
+            }
+            try:
+                pd.DataFrame(periodic_vae_checkpoint_rows).to_csv(manifest_csv, index=False)
+                _safe_json_dump(manifest_payload, manifest_json)
+                logger.info(f"  {fold_idx_str} Manifest de checkpoints VAE guardado: {manifest_csv}")
+            except Exception as e:
+                logger.warning(f"  {fold_idx_str} No se pudo guardar manifest de checkpoints VAE: {e}")
 
 
         if args.qc_analyze_distributions:
@@ -1068,6 +1427,8 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
                 "decoder_type":       args.decoder_type,
                 "num_conv_layers":    args.num_conv_layers_encoder,
                 "norm_mode":          args.norm_mode,
+                "recon_loss_mode":    args.recon_loss_mode,
+                "vae_final_activation": args.vae_final_activation,
                 "channels_used":      ",".join(map(str, selected_channel_names_in_tensor)),
             }
             qc_latent_df = pd.DataFrame([qc_latent_row])
@@ -1150,7 +1511,17 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
                 
             # 1. Capar el número de trials para no exceder un límite razonable
             max_trials = 1000
-            effective_n_trials = min(n_iter_search, max_trials)
+            effective_n_trials, requested_n_iter_override, n_iter_source = _resolve_classifier_n_iter(
+                args,
+                current_classifier_type,
+                n_iter_search,
+                max_trials=max_trials,
+            )
+            logger.info(
+                f"      Optuna trials for {current_classifier_type}: {effective_n_trials} "
+                f"(source={n_iter_source}, factory_default={int(n_iter_search)}, "
+                f"requested_override={requested_n_iter_override}, cap={max_trials})"
+            )
 
             # 2. Definir un timeout en segundos (ej. 1800s = 30 minutos) por clasificador/fold
             timeout_seconds = 1800
@@ -1195,6 +1566,10 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
                             "n_trials": int(len(study.trials)),
                             "n_complete": int(n_complete),
                             "n_pruned": int(n_pruned),
+                            "n_iter_search_factory_default": int(n_iter_search),
+                            "n_iter_search_requested_override": int(requested_n_iter_override) if requested_n_iter_override is not None else None,
+                            "n_iter_search_source": str(n_iter_source),
+                            "effective_n_trials": int(effective_n_trials),
                         },
                         fold_output_dir / f"optuna_best_trial_{current_classifier_type}_fold_{fold_idx+1}.json",
                     )
@@ -1410,20 +1785,60 @@ if __name__ == "__main__":
     group_vae.add_argument("--epochs_vae", type=int, default=800, help="Épocas máximas para VAE.")
     group_vae.add_argument("--batch_size", type=int, default=32, help="Tamaño del batch.")
     group_vae.add_argument("--beta_vae", type=float, default=1.0, help="Peso KLD (beta_max para annealing).")
+    group_vae.add_argument(
+        "--recon_loss_mode",
+        type=str,
+        default=RECON_LOSS_MODE_CURRENT,
+        choices=list(RECON_LOSS_MODES),
+        help=(
+            "Modo de pérdida de reconstrucción VAE. "
+            "mse_sum_batchmean_current preserva el comportamiento histórico. "
+            "offdiag_channelmean_sum usa sólo off-diagonal, suma por canal y promedia canales/batch."
+        ),
+    )
     group_vae.add_argument("--cyclical_beta_n_cycles", type=int, default=4, help="Ciclos para annealing de beta.")
     group_vae.add_argument("--cyclical_beta_ratio_increase", type=float, default=0.4, help="Proporción de ciclo para aumentar beta. (Recomendado: 0.4)")
     group_vae.add_argument("--weight_decay_vae", type=float, default=1e-5, help="Decaimiento de peso (L2 reg) para VAE.")
-    group_vae.add_argument("--vae_final_activation", type=str, default="tanh", choices=["sigmoid", "tanh", "linear"], help="Activación final del decoder VAE.")
+    group_vae.add_argument("--vae_final_activation", type=str, default="tanh", choices=["sigmoid", "tanh", "linear", "none"], help="Activación final del decoder VAE.")
     group_vae.add_argument("--intermediate_fc_dim_vae", type=str, default="quarter", help="Dimensión FC intermedia en VAE ('0', 'half', 'quarter', o entero).")
     group_vae.add_argument("--dropout_rate_vae", type=float, default=0.2, help="Tasa de dropout en VAE.")
     group_vae.add_argument("--use_layernorm_vae_fc", action='store_true', help="Usar LayerNorm en capas FC del VAE.")
     group_vae.add_argument("--vae_val_split_ratio", type=float, default=0.2, help="Proporción para validación VAE.")
+    group_vae.add_argument("--vae_stratify_cols", type=str, nargs='*', default=None, help="Columnas adicionales para estratificar el split interno train/val del VAE. Siempre se antepone ResearchGroup_Mapped. Default None preserva el comportamiento histórico ResearchGroup_Mapped+Sex+Age_Group.")
     group_vae.add_argument("--early_stopping_patience_vae", type=int, default=20, help="Paciencia early stopping VAE. (Recomendado: 15-20)")
     group_vae.add_argument("--lr_scheduler_patience_vae", type=int, default=15, help="Paciencia para el scheduler ReduceLROnPlateau del VAE.")
     # ▼▼▼ NUEVOS ARGUMENTOS ▼▼▼
     group_vae.add_argument("--lr_scheduler_type", type=str, default="plateau", choices=["plateau", "cosine_warm"], help="Tipo de scheduler para el VAE.")
     group_vae.add_argument("--lr_scheduler_T0", type=int, default=50, help="Épocas para el primer reinicio en CosineAnnealingWarmRestarts.")
     group_vae.add_argument("--lr_scheduler_eta_min", type=float, default=1e-7, help="Tasa de aprendizaje mínima para CosineAnnealingWarmRestarts.")
+    group_vae.add_argument(
+        "--save_vae_checkpoints_every_n_epochs",
+        type=int,
+        default=None,
+        help="Si se define, guarda checkpoints VAE periódicos por fold cada N épocas. Default None preserva el comportamiento histórico.",
+    )
+    group_vae.add_argument(
+        "--save_vae_checkpoints_start_epoch",
+        type=int,
+        default=None,
+        help="Epoch inicial 1-based para empezar a guardar checkpoints periódicos. Default None/0 preserva el comportamiento histórico.",
+    )
+    group_vae.add_argument(
+        "--save_vae_checkpoints_keep_last_n",
+        type=int,
+        default=None,
+        help="Si se define, conserva solo los N checkpoints periódicos más recientes por fold. No afecta checkpoints best/final protegidos.",
+    )
+    group_vae.add_argument(
+        "--save_vae_checkpoints_always_keep_best",
+        action="store_true",
+        help="Incluye el checkpoint best/final existente en el manifest como protegido contra pruning.",
+    )
+    group_vae.add_argument(
+        "--save_vae_checkpoints_always_keep_final",
+        action="store_true",
+        help="Protege el checkpoint terminal/final de entrenamiento contra pruning cuando hay guardado periódico.",
+    )
     # ▲▲▲ FIN NUEVOS ARGUMENTOS ▲▲▲
 
 
@@ -1449,6 +1864,18 @@ if __name__ == "__main__":
     group_clf.add_argument(
         "--metadata_features", nargs="*", default=None,
         help="Lista de columnas de metadatos para añadir como features al clasificador (ej: Age Sex Years_of_Education)."
+    )
+    group_clf.add_argument("--n_iter_logreg", type=int, default=None, help="Override opcional de trials Optuna para logreg. Si se omite, conserva el default del factory.")
+    group_clf.add_argument("--n_iter_svm", type=int, default=None, help="Override opcional de trials Optuna para svm. Si se omite, conserva el default del factory.")
+    group_clf.add_argument("--n_iter_rf", type=int, default=None, help="Override opcional de trials Optuna para rf. Si se omite, conserva el default del factory.")
+    group_clf.add_argument("--n_iter_gb", type=int, default=None, help="Override opcional de trials Optuna para gb. Si se omite, conserva el default del factory.")
+    group_clf.add_argument("--n_iter_xgb", type=int, default=None, help="Override opcional de trials Optuna para xgb. Si se omite, conserva el default del factory.")
+    group_clf.add_argument("--n_iter_mlp", type=int, default=None, help="Override opcional de trials Optuna para mlp. Si se omite, conserva el default del factory.")
+    group_clf.add_argument(
+        "--classifier_n_iter_json",
+        type=str,
+        default=None,
+        help="Overrides opcionales de trials Optuna por clasificador, ej: '{\"logreg\":100,\"svm\":300}'. Los flags --n_iter_* tienen precedencia.",
     )
     
     group_general = parser.add_argument_group('General and Saving Settings')
@@ -1521,9 +1948,24 @@ if __name__ == "__main__":
         default=1e-6,
         help="Ridge diagonal para estabilidad en total correlation gaussiana."
     )
+    parser.add_argument(
+        "--dry-run",
+        "--dry_run",
+        dest="dry_run",
+        action="store_true",
+        help="Valida argumentos y muestra configuración sin cargar datos ni entrenar.",
+    )
 
     args = parser.parse_args()
 
+    try:
+        args.classifier_n_iter_overrides = _parse_classifier_n_iter_overrides(args)
+    except ValueError as e:
+        parser.error(str(e))
+    if args.classifier_n_iter_overrides:
+        logger.info(f"Optuna trial overrides requested: {args.classifier_n_iter_overrides}")
+    else:
+        logger.info("Optuna trial overrides requested: none; using classifier factory defaults.")
 
     if isinstance(args.intermediate_fc_dim_vae, str) and args.intermediate_fc_dim_vae.lower() not in ["0", "half", "quarter"]:
         try:
@@ -1541,6 +1983,35 @@ if __name__ == "__main__":
         logger.info("Sin validación VAE, early stopping y LR scheduler para VAE deshabilitados.")
         args.early_stopping_patience_vae = 0 
         args.lr_scheduler_patience_vae = 0
+
+    if args.save_vae_checkpoints_every_n_epochs is not None and args.save_vae_checkpoints_every_n_epochs <= 0:
+        logger.warning(
+            f"save_vae_checkpoints_every_n_epochs={args.save_vae_checkpoints_every_n_epochs} inválido. "
+            "Se desactiva guardado periódico de checkpoints VAE."
+        )
+        args.save_vae_checkpoints_every_n_epochs = None
+    if args.save_vae_checkpoints_start_epoch is not None and args.save_vae_checkpoints_start_epoch < 0:
+        logger.warning(
+            f"save_vae_checkpoints_start_epoch={args.save_vae_checkpoints_start_epoch} inválido. "
+            "Se usará 0."
+        )
+        args.save_vae_checkpoints_start_epoch = 0
+    if args.save_vae_checkpoints_keep_last_n is not None and args.save_vae_checkpoints_keep_last_n <= 0:
+        logger.warning(
+            f"save_vae_checkpoints_keep_last_n={args.save_vae_checkpoints_keep_last_n} inválido. "
+            "Se desactiva pruning de checkpoints periódicos."
+        )
+        args.save_vae_checkpoints_keep_last_n = None
+
+    if args.dry_run:
+        logger.info("DRY-RUN solicitado: no se cargarán datos, no se entrenará VAE/clasificador y no se escribirán resultados.")
+        logger.info(
+            "VAE objective preview: recon_loss_mode=%s, final_activation=%s, beta_vae=%s",
+            args.recon_loss_mode,
+            args.vae_final_activation,
+            args.beta_vae,
+        )
+        sys.exit(0)
     
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -1690,7 +2161,10 @@ if __name__ == "__main__":
 
 
     logger.info("--- Consideraciones Finales ---")
-    logger.info(f"Normalización: '{args.norm_mode}'. Activación VAE: '{args.vae_final_activation}'. Asegurar compatibilidad.")
+    logger.info(
+        f"Normalización: '{args.norm_mode}'. Activación VAE: '{args.vae_final_activation}'. "
+        f"Recon loss mode: '{args.recon_loss_mode}'. Asegurar compatibilidad."
+    )
 
     if args.qc_analyze_distributions:
         logger.info("QC distribuciones ACTIVADO: Se guardaron CSV e histogramas por fold para raw/norm/recon.")

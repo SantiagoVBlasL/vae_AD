@@ -16,6 +16,20 @@ pip-wheel-metadata/
 .ipynb_checkpoints/
 **/.ipynb_checkpoints/
 
+# Personal / accidental files
+notebooks/revision_bspc_2026/*.pdf
+notebooks/revision_bspc_2026/*.docx
+
+# Duplicate notebook-local results
+notebooks/revision_bspc_2026/results/
+
+# Jupyter noise
+**/.ipynb_checkpoints/
+
+# Python cache
+**/__pycache__/
+*.pyc
+
 # OS / editors
 .DS_Store
 Thumbs.db
@@ -83,3 +97,33 @@ notebooks/ablation_full_run_fast/**
 .codex_tmp/
 
 notebooks/archive/
+
+# Local AI agent state
+.claude/
+# Local quarantine / scratch
+_quarantine_accidental_root_files_*/
+scratch/
+tmp_*/
+*.patchcd
+# Local logs
+# Local generated repo snapshots
+results/revision_bspc_2026/repo_state_snapshots/
+
+# Local AI agent state
+.claude/
+.codex
+.codex/
+
+# Local quarantine / scratch
+_quarantine_accidental_root_files_*/
+scratch/
+tmp/
+tmp_*/
+*.patchcd
+
+# Local logs
+logs/
+*.log
+
+# Local generated repo snapshots
+results/revision_bspc_2026/repo_state_snapshots/

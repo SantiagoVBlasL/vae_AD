@@ -39,7 +39,11 @@ class ConvolutionalVAE(nn.Module):
         self.input_channels = input_channels
         self.latent_dim = latent_dim
         self.image_size = image_size
-        self.final_activation_name = final_activation
+        final_activation_norm = "linear" if final_activation is None else str(final_activation).lower()
+        if final_activation_norm not in {"sigmoid", "tanh", "linear", "none", "identity"}:
+            raise ValueError("final_activation must be one of: sigmoid, tanh, linear, none.")
+
+        self.final_activation_name = final_activation_norm
         self.dropout_rate = dropout_rate
         self.use_layernorm_fc = use_layernorm_fc
         self.num_conv_layers_encoder = num_conv_layers_encoder
@@ -190,10 +194,12 @@ class ConvolutionalVAE(nn.Module):
         else:
             raise ValueError(f"decoder_type desconocido: {decoder_type}")
 
-        if final_activation == "sigmoid":
+        if final_activation_norm == "sigmoid":
             decoder_layers.append(nn.Sigmoid())
-        elif final_activation == "tanh":
+        elif final_activation_norm == "tanh":
             decoder_layers.append(nn.Tanh())
+        elif final_activation_norm in {"linear", "none", "identity"}:
+            pass
 
         self.decoder_conv = nn.Sequential(*decoder_layers)
 

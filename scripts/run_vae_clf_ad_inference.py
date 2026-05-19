@@ -60,7 +60,7 @@ from optuna.integration import OptunaSearchCV
 from optuna.pruners import MedianPruner
 
 # Torch Data
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
 
 # Plot (si lo usás)
 import matplotlib.pyplot as plt
@@ -214,6 +214,14 @@ def _get_score_1d(estimator, X):
 RECON_LOSS_MODE_CURRENT = "mse_sum_batchmean_current"
 RECON_LOSS_MODE_OFFDIAG_CHANNELMEAN = "offdiag_channelmean_sum"
 RECON_LOSS_MODES = (RECON_LOSS_MODE_CURRENT, RECON_LOSS_MODE_OFFDIAG_CHANNELMEAN)
+VAE_TRAIN_SAMPLER_NONE = "none"
+VAE_TRAIN_SAMPLER_MANUFACTURER = "manufacturer_balanced"
+VAE_TRAIN_SAMPLER_DIAGNOSIS_MANUFACTURER = "diagnosis_manufacturer_balanced"
+VAE_TRAIN_SAMPLER_STRATEGIES = (
+    VAE_TRAIN_SAMPLER_NONE,
+    VAE_TRAIN_SAMPLER_MANUFACTURER,
+    VAE_TRAIN_SAMPLER_DIAGNOSIS_MANUFACTURER,
+)
 
 
 def _offdiag_mask_for_tensor(x: torch.Tensor) -> torch.Tensor:
@@ -271,6 +279,68 @@ def vae_loss_function(recon_x, x, mu, logvar, beta=1.0, recon_loss_mode: str = R
     kld_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1).mean()
     total_loss = recon_loss + beta * kld_loss
     return total_loss, recon_loss.detach(), kld_loss.detach()
+
+
+def apply_channel_dropout_train(x: torch.Tensor, p: float) -> torch.Tensor:
+    """Drop complete input channels during VAE training only.
+
+    This is a denoising-style augmentation: the model receives corrupted input
+    but the reconstruction loss is still computed against the uncorrupted target.
+    Defaults p=0 preserve historical behavior exactly.
+    """
+    p = float(p or 0.0)
+    if p <= 0.0:
+        return x
+    if p >= 1.0:
+        raise ValueError("vae_channel_dropout_p must be < 1.0")
+    if x.ndim != 4 or x.shape[1] <= 1:
+        return x
+    keep = torch.rand((x.shape[0], x.shape[1], 1, 1), device=x.device, dtype=x.dtype) >= p
+    all_dropped = keep.flatten(1).sum(dim=1) == 0
+    if bool(all_dropped.any()):
+        keep[all_dropped, 0, :, :] = True
+    return x * keep / (1.0 - p)
+
+
+def make_vae_weighted_sampler(
+    train_rows: pd.DataFrame,
+    strategy: str,
+    seed: int,
+) -> tuple[Optional[WeightedRandomSampler], pd.DataFrame]:
+    """Build a fold-local VAE sampler without using outer test labels."""
+    strategy = str(strategy or VAE_TRAIN_SAMPLER_NONE)
+    if strategy == VAE_TRAIN_SAMPLER_NONE:
+        return None, pd.DataFrame()
+    if strategy == VAE_TRAIN_SAMPLER_MANUFACTURER:
+        cols = ["Manufacturer"]
+    elif strategy == VAE_TRAIN_SAMPLER_DIAGNOSIS_MANUFACTURER:
+        cols = ["ResearchGroup_Mapped", "Manufacturer"]
+    else:
+        raise ValueError(f"Unknown VAE sampler strategy: {strategy}")
+    missing = [col for col in cols if col not in train_rows.columns]
+    if missing:
+        raise ValueError(f"Cannot build VAE sampler; missing columns: {missing}")
+    keys = train_rows[cols].fillna("UNKNOWN").astype(str).agg("::".join, axis=1)
+    counts = keys.value_counts()
+    weights = keys.map(lambda key: 1.0 / float(counts[key])).to_numpy(dtype=np.float64)
+    weights = weights / np.mean(weights)
+    generator = torch.Generator()
+    generator.manual_seed(int(seed))
+    sampler = WeightedRandomSampler(
+        weights=torch.as_tensor(weights, dtype=torch.double),
+        num_samples=len(weights),
+        replacement=True,
+        generator=generator,
+    )
+    summary = (
+        train_rows.assign(_sampler_key=keys, _sampler_weight=weights)
+        .groupby("_sampler_key", dropna=False)
+        .agg(n=("_sampler_key", "size"), sampler_weight_mean=("_sampler_weight", "mean"))
+        .reset_index()
+        .rename(columns={"_sampler_key": "sampler_key"})
+    )
+    summary.insert(0, "vae_train_sampler_strategy", strategy)
+    return sampler, summary
 
 
 def get_cyclical_beta_schedule(current_epoch: int, total_epochs: int, beta_max: float, n_cycles: int, ratio_increase: float = 0.5) -> float:
@@ -544,10 +614,31 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
 
         joblib.dump(norm_params_fold_list, fold_output_dir / "vae_norm_params.joblib")
         vae_train_dataset = TensorDataset(torch.from_numpy(vae_pool_tensor_norm[vae_actual_train_indices_local_to_pool]).float())
+        vae_sampler = None
+        vae_shuffle = True
+        if args.vae_train_sampler_strategy != VAE_TRAIN_SAMPLER_NONE:
+            try:
+                sampler_rows = vae_train_pool_df.iloc[vae_actual_train_indices_local_to_pool].copy()
+                vae_sampler, sampler_summary = make_vae_weighted_sampler(
+                    sampler_rows,
+                    strategy=args.vae_train_sampler_strategy,
+                    seed=args.seed + fold_idx + 1000,
+                )
+                vae_shuffle = False
+                if not sampler_summary.empty:
+                    sampler_summary.to_csv(fold_output_dir / f"vae_train_sampler_summary_fold_{fold_idx+1}.csv", index=False)
+                logger.info(
+                    f"  {fold_idx_str} VAE train sampler activo: {args.vae_train_sampler_strategy}; "
+                    f"replacement=True, n_samples={len(vae_train_dataset)}"
+                )
+            except Exception as e:
+                logger.error(f"  {fold_idx_str} No se pudo construir VAE sampler {args.vae_train_sampler_strategy}: {e}")
+                raise
         vae_train_loader = DataLoader(
             vae_train_dataset,
             batch_size=args.batch_size,
-            shuffle=True,
+            shuffle=vae_shuffle,
+            sampler=vae_sampler,
             num_workers=args.num_workers,
             pin_memory=bool(torch.cuda.is_available())
         )
@@ -568,13 +659,15 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
             input_channels=num_input_channels_for_vae, latent_dim=args.latent_dim, image_size=current_global_tensor.shape[-1],
             final_activation=args.vae_final_activation, intermediate_fc_dim_config=args.intermediate_fc_dim_vae,
             dropout_rate=args.dropout_rate_vae, use_layernorm_fc=args.use_layernorm_vae_fc,
-            num_conv_layers_encoder=args.num_conv_layers_encoder, decoder_type=args.decoder_type
+            num_conv_layers_encoder=args.num_conv_layers_encoder, decoder_type=args.decoder_type,
+            encoder_norm_mode=args.vae_encoder_norm_mode
         ).to(device)
         n_rois_for_loss = int(current_global_tensor.shape[-1])
         offdiag_elements_for_loss = int(n_rois_for_loss * (n_rois_for_loss - 1))
         logger.info(
             f"  {fold_idx_str} VAE objective: recon_loss_mode={args.recon_loss_mode}, "
-            f"final_activation={args.vae_final_activation}, input_channels={num_input_channels_for_vae}, "
+            f"final_activation={args.vae_final_activation}, encoder_norm_mode={args.vae_encoder_norm_mode}, "
+            f"channel_dropout_p={args.vae_channel_dropout_p}, input_channels={num_input_channels_for_vae}, "
             f"n_rois={n_rois_for_loss}, offdiag_elements_per_channel={offdiag_elements_for_loss}, "
             f"reconstruction_loss_scale={describe_recon_loss_mode(args.recon_loss_mode, num_input_channels_for_vae, n_rois_for_loss)}"
         )
@@ -729,7 +822,8 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
                 optimizer_vae.zero_grad(set_to_none=True)
 
                 with autocast(enabled=(device.type == 'cuda')):
-                    recon_batch, mu, logvar, _ = vae_fold_k(data)
+                    vae_input = apply_channel_dropout_train(data, args.vae_channel_dropout_p)
+                    recon_batch, mu, logvar, _ = vae_fold_k(vae_input)
                     loss, recon, kld = vae_loss_function(
                         recon_batch, data, mu, logvar, beta=current_beta, recon_loss_mode=args.recon_loss_mode
                     )
@@ -1803,6 +1897,26 @@ if __name__ == "__main__":
     group_vae.add_argument("--intermediate_fc_dim_vae", type=str, default="quarter", help="Dimensión FC intermedia en VAE ('0', 'half', 'quarter', o entero).")
     group_vae.add_argument("--dropout_rate_vae", type=float, default=0.2, help="Tasa de dropout en VAE.")
     group_vae.add_argument("--use_layernorm_vae_fc", action='store_true', help="Usar LayerNorm en capas FC del VAE.")
+    group_vae.add_argument(
+        "--vae_encoder_norm_mode",
+        type=str,
+        default="groupnorm",
+        choices=["groupnorm", "layernorm", "none"],
+        help="Normalización de bloques convolucionales del encoder. groupnorm preserva el comportamiento histórico.",
+    )
+    group_vae.add_argument(
+        "--vae_channel_dropout_p",
+        type=float,
+        default=0.0,
+        help="Dropout de canales completos aplicado sólo a la entrada de entrenamiento VAE; target de reconstrucción sin corromper.",
+    )
+    group_vae.add_argument(
+        "--vae_train_sampler_strategy",
+        type=str,
+        default=VAE_TRAIN_SAMPLER_NONE,
+        choices=list(VAE_TRAIN_SAMPLER_STRATEGIES),
+        help="Sampler VAE opcional y fold-local. none preserva comportamiento histórico.",
+    )
     group_vae.add_argument("--vae_val_split_ratio", type=float, default=0.2, help="Proporción para validación VAE.")
     group_vae.add_argument("--vae_stratify_cols", type=str, nargs='*', default=None, help="Columnas adicionales para estratificar el split interno train/val del VAE. Siempre se antepone ResearchGroup_Mapped. Default None preserva el comportamiento histórico ResearchGroup_Mapped+Sex+Age_Group.")
     group_vae.add_argument("--early_stopping_patience_vae", type=int, default=20, help="Paciencia early stopping VAE. (Recomendado: 15-20)")
@@ -1983,6 +2097,8 @@ if __name__ == "__main__":
         logger.info("Sin validación VAE, early stopping y LR scheduler para VAE deshabilitados.")
         args.early_stopping_patience_vae = 0 
         args.lr_scheduler_patience_vae = 0
+    if not (0.0 <= float(args.vae_channel_dropout_p) < 1.0):
+        parser.error("--vae_channel_dropout_p must be >= 0 and < 1.")
 
     if args.save_vae_checkpoints_every_n_epochs is not None and args.save_vae_checkpoints_every_n_epochs <= 0:
         logger.warning(
@@ -2006,10 +2122,14 @@ if __name__ == "__main__":
     if args.dry_run:
         logger.info("DRY-RUN solicitado: no se cargarán datos, no se entrenará VAE/clasificador y no se escribirán resultados.")
         logger.info(
-            "VAE objective preview: recon_loss_mode=%s, final_activation=%s, beta_vae=%s",
+            "VAE objective preview: recon_loss_mode=%s, final_activation=%s, beta_vae=%s, "
+            "encoder_norm_mode=%s, channel_dropout_p=%s, train_sampler_strategy=%s",
             args.recon_loss_mode,
             args.vae_final_activation,
             args.beta_vae,
+            args.vae_encoder_norm_mode,
+            args.vae_channel_dropout_p,
+            args.vae_train_sampler_strategy,
         )
         sys.exit(0)
     

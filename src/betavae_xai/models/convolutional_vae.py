@@ -28,6 +28,7 @@ class ConvolutionalVAE(nn.Module):
         num_conv_layers_encoder: int = 4,
         decoder_type: str = "convtranspose",
         num_groups: int = 16,
+        encoder_norm_mode: str = "groupnorm",
     ) -> None:
         super().__init__()
 
@@ -42,6 +43,9 @@ class ConvolutionalVAE(nn.Module):
         final_activation_norm = "linear" if final_activation is None else str(final_activation).lower()
         if final_activation_norm not in {"sigmoid", "tanh", "linear", "none", "identity"}:
             raise ValueError("final_activation must be one of: sigmoid, tanh, linear, none.")
+        encoder_norm_mode = str(encoder_norm_mode or "groupnorm").lower()
+        if encoder_norm_mode not in {"groupnorm", "layernorm", "none", "identity"}:
+            raise ValueError("encoder_norm_mode must be one of: groupnorm, layernorm, none.")
 
         self.final_activation_name = final_activation_norm
         self.dropout_rate = dropout_rate
@@ -49,6 +53,7 @@ class ConvolutionalVAE(nn.Module):
         self.num_conv_layers_encoder = num_conv_layers_encoder
         self.decoder_type = decoder_type
         self.num_groups = num_groups
+        self.encoder_norm_mode = encoder_norm_mode
 
         # ------------------------------
         # Encoder (conv → optional FC)
@@ -69,14 +74,19 @@ class ConvolutionalVAE(nn.Module):
         spatial_dims = [image_size]
         dim = image_size
         for k, p, s, ch_out in zip(kernels, paddings, strides, conv_ch_enc):
+            next_dim = ((dim + 2 * p - k) // s) + 1
             encoder_layers += [
                 nn.Conv2d(curr_ch, ch_out, kernel_size=k, stride=s, padding=p),
                 nn.GELU(),
-                nn.GroupNorm(self.num_groups, ch_out),
-                nn.Dropout2d(p=dropout_rate),
             ]
+            if self.encoder_norm_mode == "groupnorm":
+                encoder_layers.append(nn.GroupNorm(self.num_groups, ch_out))
+            elif self.encoder_norm_mode == "layernorm":
+                # GroupNorm(1, C) is a LayerNorm-style option for NCHW conv features.
+                encoder_layers.append(nn.GroupNorm(1, ch_out))
+            encoder_layers.append(nn.Dropout2d(p=dropout_rate))
             curr_ch = ch_out
-            dim = ((dim + 2 * p - k) // s) + 1
+            dim = next_dim
             spatial_dims.append(dim)
         self.encoder_conv = nn.Sequential(*encoder_layers)
 

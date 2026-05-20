@@ -470,6 +470,19 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
         outer_cv_clf = StratifiedKFold(n_splits=args.outer_folds, shuffle=True, random_state=args.seed)
         total_outer_iterations = args.outer_folds
     logger.info(f"Usando CV externa: {type(outer_cv_clf).__name__} con {total_outer_iterations} iteraciones totales.")
+    selected_outer_fold_indices = None
+    if args.outer_fold_indices_to_run:
+        selected_outer_fold_indices = sorted({int(x) for x in args.outer_fold_indices_to_run})
+        invalid_outer = [x for x in selected_outer_fold_indices if x < 1 or x > total_outer_iterations]
+        if invalid_outer:
+            raise ValueError(
+                f"outer_fold_indices_to_run contiene folds inválidos {invalid_outer}; "
+                f"rango permitido: 1..{total_outer_iterations}"
+            )
+        logger.info(
+            "Modo diagnóstico: se ejecutarán sólo las iteraciones externas 1-based: "
+            f"{selected_outer_fold_indices}. Los demás folds se saltarán sin crear artefactos."
+        )
 
     all_folds_metrics = []
     all_folds_vae_history = []
@@ -479,6 +492,9 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
     #for fold_idx, (train_dev_clf_idx_in_cn_ad_df, test_clf_idx_in_cn_ad_df) in enumerate(outer_cv_clf.split(X_classifier_subject_indices_in_cn_ad_df, stratify_key_for_clf_cv)):
         fold_start_time = time.time()
         fold_idx_str = f"Fold {fold_idx + 1}/{total_outer_iterations}"
+        if selected_outer_fold_indices is not None and (fold_idx + 1) not in selected_outer_fold_indices:
+            logger.info(f"--- Saltando {fold_idx_str} por outer_fold_indices_to_run={selected_outer_fold_indices} ---")
+            continue
         logger.info(f"--- Iniciando {fold_idx_str} ---")
         
         
@@ -1881,6 +1897,16 @@ if __name__ == "__main__":
     group_cv.add_argument("--outer_folds", type=int, default=5, help="Número de folds para CV externa del clasificador.")
     group_cv.add_argument("--repeated_outer_folds_n_repeats", type=int, default=1, help="Número de repeticiones para RepeatedStratifiedKFold.")
     group_cv.add_argument("--inner_folds", type=int, default=5, help="Folds para CV interna (búsqueda de HP con OptunaSearchCV).") 
+    group_cv.add_argument(
+        "--outer_fold_indices_to_run",
+        type=int,
+        nargs="*",
+        default=None,
+        help=(
+            "Optional 1-based outer fold iteration indices to execute. "
+            "Default None runs all folds. Intended for controlled diagnostics only."
+        ),
+    )
     group_cv.add_argument("--classifier_stratify_cols", type=str, nargs='*', default=['Sex'], help="Columnas adicionales para estratificación del clasificador.")
     #group_cv.add_argument("--classifier_hp_tune_ratio", type=float, default=0.25, help="Proporción de datos de train/dev para ajuste de HP.")
     group_vae = parser.add_argument_group('VAE Model and Training')

@@ -66,7 +66,12 @@ from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
 import matplotlib.pyplot as plt
 
 # Proyecto
-from betavae_xai.models import ConvolutionalVAE, get_classifier_and_grid, get_available_classifiers
+from betavae_xai.models import (
+    ConvolutionalVAE,
+    DROPOUT_SCOPE_CHOICES,
+    get_classifier_and_grid,
+    get_available_classifiers,
+)
 from betavae_xai.analysis_qc.fold_qc import (
     log_group_distributions,
     compute_latent_silhouette,
@@ -660,14 +665,16 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
             final_activation=args.vae_final_activation, intermediate_fc_dim_config=args.intermediate_fc_dim_vae,
             dropout_rate=args.dropout_rate_vae, use_layernorm_fc=args.use_layernorm_vae_fc,
             num_conv_layers_encoder=args.num_conv_layers_encoder, decoder_type=args.decoder_type,
-            encoder_norm_mode=args.vae_encoder_norm_mode
+            encoder_norm_mode=args.vae_encoder_norm_mode,
+            dropout_scope=args.vae_dropout_scope,
         ).to(device)
         n_rois_for_loss = int(current_global_tensor.shape[-1])
         offdiag_elements_for_loss = int(n_rois_for_loss * (n_rois_for_loss - 1))
         logger.info(
             f"  {fold_idx_str} VAE objective: recon_loss_mode={args.recon_loss_mode}, "
             f"final_activation={args.vae_final_activation}, encoder_norm_mode={args.vae_encoder_norm_mode}, "
-            f"channel_dropout_p={args.vae_channel_dropout_p}, input_channels={num_input_channels_for_vae}, "
+            f"dropout_scope={args.vae_dropout_scope}, channel_dropout_p={args.vae_channel_dropout_p}, "
+            f"input_channels={num_input_channels_for_vae}, "
             f"n_rois={n_rois_for_loss}, offdiag_elements_per_channel={offdiag_elements_for_loss}, "
             f"reconstruction_loss_scale={describe_recon_loss_mode(args.recon_loss_mode, num_input_channels_for_vae, n_rois_for_loss)}"
         )
@@ -1523,6 +1530,7 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
                 "norm_mode":          args.norm_mode,
                 "recon_loss_mode":    args.recon_loss_mode,
                 "vae_final_activation": args.vae_final_activation,
+                "vae_dropout_scope":  args.vae_dropout_scope,
                 "channels_used":      ",".join(map(str, selected_channel_names_in_tensor)),
             }
             qc_latent_df = pd.DataFrame([qc_latent_row])
@@ -1896,6 +1904,16 @@ if __name__ == "__main__":
     group_vae.add_argument("--vae_final_activation", type=str, default="tanh", choices=["sigmoid", "tanh", "linear", "none"], help="Activación final del decoder VAE.")
     group_vae.add_argument("--intermediate_fc_dim_vae", type=str, default="quarter", help="Dimensión FC intermedia en VAE ('0', 'half', 'quarter', o entero).")
     group_vae.add_argument("--dropout_rate_vae", type=float, default=0.2, help="Tasa de dropout en VAE.")
+    group_vae.add_argument(
+        "--vae_dropout_scope",
+        type=str,
+        default="legacy_all",
+        choices=list(DROPOUT_SCOPE_CHOICES),
+        help=(
+            "Ámbito del dropout VAE. legacy_all preserva el comportamiento histórico; "
+            "encoder_only/no_decoder_dropout quitan dropout del decoder; none desactiva dropout explícito."
+        ),
+    )
     group_vae.add_argument("--use_layernorm_vae_fc", action='store_true', help="Usar LayerNorm en capas FC del VAE.")
     group_vae.add_argument(
         "--vae_encoder_norm_mode",
@@ -2123,11 +2141,12 @@ if __name__ == "__main__":
         logger.info("DRY-RUN solicitado: no se cargarán datos, no se entrenará VAE/clasificador y no se escribirán resultados.")
         logger.info(
             "VAE objective preview: recon_loss_mode=%s, final_activation=%s, beta_vae=%s, "
-            "encoder_norm_mode=%s, channel_dropout_p=%s, train_sampler_strategy=%s",
+            "encoder_norm_mode=%s, dropout_scope=%s, channel_dropout_p=%s, train_sampler_strategy=%s",
             args.recon_loss_mode,
             args.vae_final_activation,
             args.beta_vae,
             args.vae_encoder_norm_mode,
+            args.vae_dropout_scope,
             args.vae_channel_dropout_p,
             args.vae_train_sampler_strategy,
         )
@@ -2283,7 +2302,8 @@ if __name__ == "__main__":
     logger.info("--- Consideraciones Finales ---")
     logger.info(
         f"Normalización: '{args.norm_mode}'. Activación VAE: '{args.vae_final_activation}'. "
-        f"Recon loss mode: '{args.recon_loss_mode}'. Asegurar compatibilidad."
+        f"Recon loss mode: '{args.recon_loss_mode}'. Dropout scope: '{args.vae_dropout_scope}'. "
+        "Asegurar compatibilidad."
     )
 
     if args.qc_analyze_distributions:

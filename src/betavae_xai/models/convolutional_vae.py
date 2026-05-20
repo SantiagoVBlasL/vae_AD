@@ -10,7 +10,16 @@ from typing import Tuple, Union, List
 import torch
 import torch.nn as nn
 
-__all__ = ["ConvolutionalVAE"]
+DROPOUT_SCOPE_CHOICES = (
+    "legacy_all",
+    "encoder_only",
+    "no_decoder_dropout",
+    "encoder_fc_only",
+    "encoder_conv_only",
+    "none",
+)
+
+__all__ = ["ConvolutionalVAE", "DROPOUT_SCOPE_CHOICES"]
 
 
 class ConvolutionalVAE(nn.Module):
@@ -29,6 +38,7 @@ class ConvolutionalVAE(nn.Module):
         decoder_type: str = "convtranspose",
         num_groups: int = 16,
         encoder_norm_mode: str = "groupnorm",
+        dropout_scope: str = "legacy_all",
     ) -> None:
         super().__init__()
 
@@ -46,9 +56,15 @@ class ConvolutionalVAE(nn.Module):
         encoder_norm_mode = str(encoder_norm_mode or "groupnorm").lower()
         if encoder_norm_mode not in {"groupnorm", "layernorm", "none", "identity"}:
             raise ValueError("encoder_norm_mode must be one of: groupnorm, layernorm, none.")
+        dropout_scope = str(dropout_scope or "legacy_all").lower()
+        if dropout_scope not in DROPOUT_SCOPE_CHOICES:
+            raise ValueError(
+                "dropout_scope must be one of: " + ", ".join(DROPOUT_SCOPE_CHOICES)
+            )
 
         self.final_activation_name = final_activation_norm
-        self.dropout_rate = dropout_rate
+        self.dropout_rate = float(dropout_rate)
+        self.dropout_scope = dropout_scope
         self.use_layernorm_fc = use_layernorm_fc
         self.num_conv_layers_encoder = num_conv_layers_encoder
         self.decoder_type = decoder_type
@@ -84,7 +100,7 @@ class ConvolutionalVAE(nn.Module):
             elif self.encoder_norm_mode == "layernorm":
                 # GroupNorm(1, C) is a LayerNorm-style option for NCHW conv features.
                 encoder_layers.append(nn.GroupNorm(1, ch_out))
-            encoder_layers.append(nn.Dropout2d(p=dropout_rate))
+            encoder_layers.append(self._make_dropout("encoder_conv", spatial=True))
             curr_ch = ch_out
             dim = next_dim
             spatial_dims.append(dim)
@@ -105,7 +121,7 @@ class ConvolutionalVAE(nn.Module):
             fc_layers += [
                 nn.GELU(),
                 nn.BatchNorm1d(self.intermediate_fc_dim),
-                nn.Dropout(p=dropout_rate),
+                self._make_dropout("encoder_fc", spatial=False),
             ]
             self.encoder_fc_intermediate = nn.Sequential(*fc_layers)
             mu_logvar_in = self.intermediate_fc_dim
@@ -126,7 +142,7 @@ class ConvolutionalVAE(nn.Module):
             dec_fc_layers += [
                 nn.GELU(),
                 nn.BatchNorm1d(self.intermediate_fc_dim),
-                nn.Dropout(p=dropout_rate),
+                self._make_dropout("decoder_fc", spatial=False),
             ]
             self.decoder_fc_intermediate = nn.Sequential(*dec_fc_layers)
             dec_fc_out = self.intermediate_fc_dim
@@ -169,7 +185,7 @@ class ConvolutionalVAE(nn.Module):
                 if i < len(target_conv_t_channels) - 1:
                     decoder_layers += [
                         nn.GroupNorm(self.num_groups, ch_out),
-                        nn.Dropout2d(p=dropout_rate),
+                        self._make_dropout("decoder_conv", spatial=True),
                     ]
                 curr_ch_dec = ch_out
 
@@ -197,7 +213,7 @@ class ConvolutionalVAE(nn.Module):
                 if i < len(target_channels) - 1:
                     decoder_layers += [
                         nn.GroupNorm(self.num_groups, ch_out),
-                        nn.Dropout2d(p=dropout_rate),
+                        self._make_dropout("decoder_conv", spatial=True),
                     ]
                 curr_ch_dec = ch_out
 
@@ -212,6 +228,27 @@ class ConvolutionalVAE(nn.Module):
             pass
 
         self.decoder_conv = nn.Sequential(*decoder_layers)
+
+    def _dropout_enabled(self, location: str) -> bool:
+        if self.dropout_rate <= 0.0:
+            return False
+        if self.dropout_scope == "legacy_all":
+            return True
+        if self.dropout_scope == "none":
+            return False
+        if self.dropout_scope in {"encoder_only", "no_decoder_dropout"}:
+            return location.startswith("encoder_")
+        if self.dropout_scope == "encoder_fc_only":
+            return location == "encoder_fc"
+        if self.dropout_scope == "encoder_conv_only":
+            return location == "encoder_conv"
+        return False
+
+    def _make_dropout(self, location: str, spatial: bool) -> nn.Module:
+        if not self._dropout_enabled(location):
+            return nn.Identity()
+        dropout_cls = nn.Dropout2d if spatial else nn.Dropout
+        return dropout_cls(p=self.dropout_rate)
 
     def _resolve_intermediate_fc(self, cfg: Union[int, str], flat_size: int) -> int:
         if cfg == "0" or cfg == 0:

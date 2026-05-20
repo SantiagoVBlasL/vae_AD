@@ -19,7 +19,12 @@ DROPOUT_SCOPE_CHOICES = (
     "none",
 )
 
-__all__ = ["ConvolutionalVAE", "DROPOUT_SCOPE_CHOICES"]
+BLOCK_ORDER_CHOICES = (
+    "legacy_act_norm",
+    "norm_act",
+)
+
+__all__ = ["ConvolutionalVAE", "DROPOUT_SCOPE_CHOICES", "BLOCK_ORDER_CHOICES"]
 
 
 class ConvolutionalVAE(nn.Module):
@@ -39,6 +44,7 @@ class ConvolutionalVAE(nn.Module):
         num_groups: int = 16,
         encoder_norm_mode: str = "groupnorm",
         dropout_scope: str = "legacy_all",
+        block_order: str = "legacy_act_norm",
     ) -> None:
         super().__init__()
 
@@ -61,10 +67,16 @@ class ConvolutionalVAE(nn.Module):
             raise ValueError(
                 "dropout_scope must be one of: " + ", ".join(DROPOUT_SCOPE_CHOICES)
             )
+        block_order = str(block_order or "legacy_act_norm").lower()
+        if block_order not in BLOCK_ORDER_CHOICES:
+            raise ValueError(
+                "block_order must be one of: " + ", ".join(BLOCK_ORDER_CHOICES)
+            )
 
         self.final_activation_name = final_activation_norm
         self.dropout_rate = float(dropout_rate)
         self.dropout_scope = dropout_scope
+        self.block_order = block_order
         self.use_layernorm_fc = use_layernorm_fc
         self.num_conv_layers_encoder = num_conv_layers_encoder
         self.decoder_type = decoder_type
@@ -91,15 +103,18 @@ class ConvolutionalVAE(nn.Module):
         dim = image_size
         for k, p, s, ch_out in zip(kernels, paddings, strides, conv_ch_enc):
             next_dim = ((dim + 2 * p - k) // s) + 1
-            encoder_layers += [
-                nn.Conv2d(curr_ch, ch_out, kernel_size=k, stride=s, padding=p),
-                nn.GELU(),
-            ]
-            if self.encoder_norm_mode == "groupnorm":
-                encoder_layers.append(nn.GroupNorm(self.num_groups, ch_out))
-            elif self.encoder_norm_mode == "layernorm":
-                # GroupNorm(1, C) is a LayerNorm-style option for NCHW conv features.
-                encoder_layers.append(nn.GroupNorm(1, ch_out))
+            encoder_layers.append(
+                nn.Conv2d(curr_ch, ch_out, kernel_size=k, stride=s, padding=p)
+            )
+            norm_layer = self._make_encoder_conv_norm(ch_out)
+            if self.block_order == "legacy_act_norm":
+                encoder_layers.append(nn.GELU())
+                if norm_layer is not None:
+                    encoder_layers.append(norm_layer)
+            else:
+                if norm_layer is not None:
+                    encoder_layers.append(norm_layer)
+                encoder_layers.append(nn.GELU())
             encoder_layers.append(self._make_dropout("encoder_conv", spatial=True))
             curr_ch = ch_out
             dim = next_dim
@@ -116,13 +131,20 @@ class ConvolutionalVAE(nn.Module):
         )
         if self.intermediate_fc_dim:
             fc_layers = [nn.Linear(flat_size, self.intermediate_fc_dim)]
-            if use_layernorm_fc:
-                fc_layers.append(nn.LayerNorm(self.intermediate_fc_dim))
-            fc_layers += [
-                nn.GELU(),
-                nn.BatchNorm1d(self.intermediate_fc_dim),
-                self._make_dropout("encoder_fc", spatial=False),
-            ]
+            if self.block_order == "legacy_act_norm":
+                if use_layernorm_fc:
+                    fc_layers.append(nn.LayerNorm(self.intermediate_fc_dim))
+                fc_layers += [
+                    nn.GELU(),
+                    nn.BatchNorm1d(self.intermediate_fc_dim),
+                    self._make_dropout("encoder_fc", spatial=False),
+                ]
+            else:
+                fc_layers += [
+                    self._make_fc_norm(self.intermediate_fc_dim),
+                    nn.GELU(),
+                    self._make_dropout("encoder_fc", spatial=False),
+                ]
             self.encoder_fc_intermediate = nn.Sequential(*fc_layers)
             mu_logvar_in = self.intermediate_fc_dim
         else:
@@ -137,13 +159,20 @@ class ConvolutionalVAE(nn.Module):
         # ------------------------------
         if self.intermediate_fc_dim:
             dec_fc_layers = [nn.Linear(latent_dim, self.intermediate_fc_dim)]
-            if use_layernorm_fc:
-                dec_fc_layers.append(nn.LayerNorm(self.intermediate_fc_dim))
-            dec_fc_layers += [
-                nn.GELU(),
-                nn.BatchNorm1d(self.intermediate_fc_dim),
-                self._make_dropout("decoder_fc", spatial=False),
-            ]
+            if self.block_order == "legacy_act_norm":
+                if use_layernorm_fc:
+                    dec_fc_layers.append(nn.LayerNorm(self.intermediate_fc_dim))
+                dec_fc_layers += [
+                    nn.GELU(),
+                    nn.BatchNorm1d(self.intermediate_fc_dim),
+                    self._make_dropout("decoder_fc", spatial=False),
+                ]
+            else:
+                dec_fc_layers += [
+                    self._make_fc_norm(self.intermediate_fc_dim),
+                    nn.GELU(),
+                    self._make_dropout("decoder_fc", spatial=False),
+                ]
             self.decoder_fc_intermediate = nn.Sequential(*dec_fc_layers)
             dec_fc_out = self.intermediate_fc_dim
         else:
@@ -171,7 +200,7 @@ class ConvolutionalVAE(nn.Module):
                 tmp_dim = (tmp_dim - 1) * s - 2 * p + k + op
 
             for i, ch_out in enumerate(target_conv_t_channels):
-                decoder_layers += [
+                decoder_layers.append(
                     nn.ConvTranspose2d(
                         curr_ch_dec,
                         ch_out,
@@ -179,14 +208,23 @@ class ConvolutionalVAE(nn.Module):
                         stride=decoder_strides[i],
                         padding=decoder_paddings[i],
                         output_padding=output_paddings[i],
-                    ),
-                    nn.GELU() if i < len(target_conv_t_channels) - 1 else nn.Identity(),
-                ]
+                    )
+                )
                 if i < len(target_conv_t_channels) - 1:
-                    decoder_layers += [
-                        nn.GroupNorm(self.num_groups, ch_out),
-                        self._make_dropout("decoder_conv", spatial=True),
-                    ]
+                    if self.block_order == "legacy_act_norm":
+                        decoder_layers += [
+                            nn.GELU(),
+                            nn.GroupNorm(self.num_groups, ch_out),
+                            self._make_dropout("decoder_conv", spatial=True),
+                        ]
+                    else:
+                        decoder_layers += [
+                            nn.GroupNorm(self.num_groups, ch_out),
+                            nn.GELU(),
+                            self._make_dropout("decoder_conv", spatial=True),
+                        ]
+                else:
+                    decoder_layers.append(nn.Identity())
                 curr_ch_dec = ch_out
 
         elif decoder_type == "upsample_conv":
@@ -208,13 +246,22 @@ class ConvolutionalVAE(nn.Module):
                 decoder_layers += [
                     nn.Upsample(size=(target_dim, target_dim), mode="bilinear", align_corners=False),
                     nn.Conv2d(curr_ch_dec, ch_out, kernel_size=k, stride=1, padding=pad),
-                    nn.GELU() if i < len(target_channels) - 1 else nn.Identity(),
                 ]
                 if i < len(target_channels) - 1:
-                    decoder_layers += [
-                        nn.GroupNorm(self.num_groups, ch_out),
-                        self._make_dropout("decoder_conv", spatial=True),
-                    ]
+                    if self.block_order == "legacy_act_norm":
+                        decoder_layers += [
+                            nn.GELU(),
+                            nn.GroupNorm(self.num_groups, ch_out),
+                            self._make_dropout("decoder_conv", spatial=True),
+                        ]
+                    else:
+                        decoder_layers += [
+                            nn.GroupNorm(self.num_groups, ch_out),
+                            nn.GELU(),
+                            self._make_dropout("decoder_conv", spatial=True),
+                        ]
+                else:
+                    decoder_layers.append(nn.Identity())
                 curr_ch_dec = ch_out
 
         else:
@@ -228,6 +275,19 @@ class ConvolutionalVAE(nn.Module):
             pass
 
         self.decoder_conv = nn.Sequential(*decoder_layers)
+
+    def _make_encoder_conv_norm(self, channels: int) -> Union[nn.Module, None]:
+        if self.encoder_norm_mode == "groupnorm":
+            return nn.GroupNorm(self.num_groups, channels)
+        if self.encoder_norm_mode == "layernorm":
+            # GroupNorm(1, C) is a LayerNorm-style option for NCHW conv features.
+            return nn.GroupNorm(1, channels)
+        return None
+
+    def _make_fc_norm(self, features: int) -> nn.Module:
+        if self.use_layernorm_fc:
+            return nn.LayerNorm(features)
+        return nn.BatchNorm1d(features)
 
     def _dropout_enabled(self, location: str) -> bool:
         if self.dropout_rate <= 0.0:

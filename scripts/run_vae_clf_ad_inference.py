@@ -67,6 +67,7 @@ import matplotlib.pyplot as plt
 
 # Proyecto
 from betavae_xai.models import (
+    BLOCK_ORDER_CHOICES,
     ConvolutionalVAE,
     DROPOUT_SCOPE_CHOICES,
     get_classifier_and_grid,
@@ -667,13 +668,15 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
             num_conv_layers_encoder=args.num_conv_layers_encoder, decoder_type=args.decoder_type,
             encoder_norm_mode=args.vae_encoder_norm_mode,
             dropout_scope=args.vae_dropout_scope,
+            block_order=args.vae_block_order,
         ).to(device)
         n_rois_for_loss = int(current_global_tensor.shape[-1])
         offdiag_elements_for_loss = int(n_rois_for_loss * (n_rois_for_loss - 1))
         logger.info(
             f"  {fold_idx_str} VAE objective: recon_loss_mode={args.recon_loss_mode}, "
             f"final_activation={args.vae_final_activation}, encoder_norm_mode={args.vae_encoder_norm_mode}, "
-            f"dropout_scope={args.vae_dropout_scope}, channel_dropout_p={args.vae_channel_dropout_p}, "
+            f"dropout_scope={args.vae_dropout_scope}, block_order={args.vae_block_order}, "
+            f"channel_dropout_p={args.vae_channel_dropout_p}, "
             f"input_channels={num_input_channels_for_vae}, "
             f"n_rois={n_rois_for_loss}, offdiag_elements_per_channel={offdiag_elements_for_loss}, "
             f"reconstruction_loss_scale={describe_recon_loss_mode(args.recon_loss_mode, num_input_channels_for_vae, n_rois_for_loss)}"
@@ -1531,6 +1534,7 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
                 "recon_loss_mode":    args.recon_loss_mode,
                 "vae_final_activation": args.vae_final_activation,
                 "vae_dropout_scope":  args.vae_dropout_scope,
+                "vae_block_order":    args.vae_block_order,
                 "channels_used":      ",".join(map(str, selected_channel_names_in_tensor)),
             }
             qc_latent_df = pd.DataFrame([qc_latent_row])
@@ -1914,6 +1918,17 @@ if __name__ == "__main__":
             "encoder_only/no_decoder_dropout quitan dropout del decoder; none desactiva dropout explícito."
         ),
     )
+    group_vae.add_argument(
+        "--vae_block_order",
+        type=str,
+        default="legacy_act_norm",
+        choices=list(BLOCK_ORDER_CHOICES),
+        help=(
+            "Orden de bloques VAE. legacy_act_norm preserva el comportamiento histórico "
+            "(Conv/Linear -> GELU -> Norm -> Dropout en conv; FC histórico). "
+            "norm_act usa Conv/Linear -> Norm -> GELU -> Dropout."
+        ),
+    )
     group_vae.add_argument("--use_layernorm_vae_fc", action='store_true', help="Usar LayerNorm en capas FC del VAE.")
     group_vae.add_argument(
         "--vae_encoder_norm_mode",
@@ -2141,12 +2156,14 @@ if __name__ == "__main__":
         logger.info("DRY-RUN solicitado: no se cargarán datos, no se entrenará VAE/clasificador y no se escribirán resultados.")
         logger.info(
             "VAE objective preview: recon_loss_mode=%s, final_activation=%s, beta_vae=%s, "
-            "encoder_norm_mode=%s, dropout_scope=%s, channel_dropout_p=%s, train_sampler_strategy=%s",
+            "encoder_norm_mode=%s, dropout_scope=%s, block_order=%s, "
+            "channel_dropout_p=%s, train_sampler_strategy=%s",
             args.recon_loss_mode,
             args.vae_final_activation,
             args.beta_vae,
             args.vae_encoder_norm_mode,
             args.vae_dropout_scope,
+            args.vae_block_order,
             args.vae_channel_dropout_p,
             args.vae_train_sampler_strategy,
         )
@@ -2303,6 +2320,7 @@ if __name__ == "__main__":
     logger.info(
         f"Normalización: '{args.norm_mode}'. Activación VAE: '{args.vae_final_activation}'. "
         f"Recon loss mode: '{args.recon_loss_mode}'. Dropout scope: '{args.vae_dropout_scope}'. "
+        f"Block order: '{args.vae_block_order}'. "
         "Asegurar compatibilidad."
     )
 

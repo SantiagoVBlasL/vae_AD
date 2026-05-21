@@ -19,6 +19,7 @@ import json
 import shlex
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Sequence, Tuple
@@ -45,6 +46,7 @@ EXPECTED_PRIMARY_THRESHOLD = "inner_oof_target_sens_ge_0p70_max_spec"
 
 STAGE_B_SCRIPT = PROJECT_ROOT / "scripts/revision_bspc_2026/run_v5_1_batch20260514b_mfrsplit_3840_classifier_only_sweep.py"
 COMPARISON_SCRIPT = PROJECT_ROOT / "scripts/revision_bspc_2026/compare_v5_1_batch20260514b_horizon4480_cycles56_full_5x5.py"
+INTEGRITY_AUDIT_SCRIPT = PROJECT_ROOT / "scripts/revision_bspc_2026/audit_v5_1_batch20260514b_horizon4480_integrity.py"
 
 
 def parse_args() -> argparse.Namespace:
@@ -57,6 +59,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-comparison", action="store_true")
     parser.add_argument("--python-executable", default=None)
     parser.add_argument("--skip-preview-write", action="store_true")
+    parser.add_argument(
+        "--force-clean",
+        action="store_true",
+        help=(
+            "Before real training, move existing output_dir contents to a timestamped quarantine folder "
+            "and continue with an empty output_dir. Never deletes silently."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -378,7 +388,52 @@ def build_comparison_command(config: Dict[str, Any], python_exe: str) -> List[st
     ]
 
 
+def build_integrity_audit_command(config: Dict[str, Any], python_exe: str) -> List[str]:
+    outdir = resolve(config["paths"]["output_dir"])
+    return [
+        python_exe,
+        str(INTEGRITY_AUDIT_SCRIPT),
+        "--candidate-run",
+        str(outdir),
+        "--candidate-readout",
+        str(outdir / "classifier_only_readout"),
+    ]
+
+
 OUT_COMPARISON_DIR = PROJECT_ROOT / "results/revision_bspc_2026/adni_v5_1_batch20260514b_ch1_0_2_horizon4480_cycles56_full_5x5_comparison"
+
+STALE_TOPLEVEL_NAMES = {"classifier_only_readout", "latent_cache", "run_manifest.json"}
+STALE_PREFIXES = ("fold_", "all_folds_metrics", "summary_metrics")
+
+
+def stale_output_markers(output_dir: Path) -> List[Path]:
+    if not output_dir.exists():
+        return []
+    markers: List[Path] = []
+    for child in output_dir.iterdir():
+        if child.name in STALE_TOPLEVEL_NAMES or child.name.startswith(STALE_PREFIXES):
+            markers.append(child)
+    for nested in output_dir.rglob("latent_cache"):
+        if nested not in markers:
+            markers.append(nested)
+    return sorted(markers, key=lambda p: str(p))
+
+
+def quarantine_existing_output_contents(output_dir: Path) -> Path:
+    if not output_dir.exists():
+        raise RuntimeError(f"Cannot quarantine missing output_dir: {output_dir}")
+    real_output = output_dir.resolve()
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    quarantine = real_output.parent / f"{real_output.name}_quarantine_{timestamp}"
+    suffix = 1
+    while quarantine.exists():
+        quarantine = real_output.parent / f"{real_output.name}_quarantine_{timestamp}_{suffix}"
+        suffix += 1
+    quarantine.mkdir(parents=True, exist_ok=False)
+    for child in list(output_dir.iterdir()):
+        child.rename(quarantine / child.name)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return quarantine
 
 
 def validate_stage_a_command(command: Sequence[str]) -> None:
@@ -422,7 +477,7 @@ def validate_stage_b_command(command: Sequence[str]) -> None:
     require_equal(values_after_flag(command, "--models"), [EXPECTED_PRIMARY_MODEL], "Stage B models")
 
 
-def ensure_output_prepared(config: Dict[str, Any]) -> None:
+def ensure_output_prepared(config: Dict[str, Any], force_clean: bool = False) -> Path | None:
     output_dir = resolve(config["paths"]["output_dir"])
     big_disk = Path(config["paths"]["big_disk_output_dir"])
     if not output_dir.exists():
@@ -435,12 +490,84 @@ def ensure_output_prepared(config: Dict[str, Any]) -> None:
         raise RuntimeError(f"Refusing to start training: output_dir is not a symlink: {output_dir}")
     if output_dir.resolve() != big_disk.resolve():
         raise RuntimeError(f"Refusing to start training: symlink target is {output_dir.resolve()}, expected {big_disk.resolve()}")
+    stale = stale_output_markers(output_dir)
+    if stale and not force_clean:
+        preview = "\n".join(f"  - {p}" for p in stale[:20])
+        more = "" if len(stale) <= 20 else f"\n  ... {len(stale) - 20} more"
+        raise RuntimeError(
+            "Refusing to start training: output_dir contains stale run artifacts. "
+            "Pass --force-clean to quarantine existing contents before training.\n"
+            f"{preview}{more}"
+        )
+    quarantine: Path | None = None
+    if force_clean:
+        existing = list(output_dir.iterdir())
+        if existing:
+            quarantine = quarantine_existing_output_contents(output_dir)
+            print(f"[clean-run] Existing output_dir contents moved to quarantine: {quarantine}")
+    if list(output_dir.iterdir()):
+        raise RuntimeError(f"Refusing to start training: output_dir is not empty after clean policy: {output_dir}")
     unexpected = [p.name for p in output_dir.iterdir() if p.name not in {"run_manifest.json", "command_log.json"}]
     if unexpected:
         raise RuntimeError(f"Refusing to start training: output_dir is not empty: {unexpected[:8]}")
+    return quarantine
 
 
-def write_manifest(config_path: Path, config: Dict[str, Any], stage_a: Sequence[str], stage_b: Sequence[str], comparison: Sequence[str]) -> Path:
+def verify_fresh_vae_checkpoints(config: Dict[str, Any], run_start_epoch: float) -> List[Dict[str, Any]]:
+    output_dir = resolve(config["paths"]["output_dir"])
+    rows: List[Dict[str, Any]] = []
+    for fold in range(1, int(config["parameters"]["outer_folds"]) + 1):
+        ckpt = output_dir / f"fold_{fold}" / f"vae_model_fold_{fold}.pt"
+        exists = ckpt.exists()
+        mtime = ckpt.stat().st_mtime if exists else None
+        rows.append(
+            {
+                "fold": fold,
+                "path": str(ckpt),
+                "exists": bool(exists),
+                "mtime_epoch": mtime,
+                "mtime_iso": datetime.fromtimestamp(mtime).isoformat() if mtime is not None else "",
+                "fresh_after_run_start": bool(exists and mtime is not None and mtime > run_start_epoch),
+            }
+        )
+    stale = [row for row in rows if not row["fresh_after_run_start"]]
+    validation_path = output_dir / "fresh_checkpoint_validation.json"
+    validation_path.write_text(
+        json.dumps(
+            {
+                "created_utc": datetime.now(timezone.utc).isoformat(),
+                "run_start_epoch": run_start_epoch,
+                "run_start_iso": datetime.fromtimestamp(run_start_epoch).isoformat(),
+                "rows": rows,
+                "all_fresh": not stale,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    if stale:
+        details = "\n".join(
+            f"  - fold {row['fold']}: exists={row['exists']} mtime={row['mtime_iso']} path={row['path']}"
+            for row in stale
+        )
+        raise RuntimeError(
+            "Refusing to run Stage B: not all VAE checkpoints were created after this launcher invocation.\n"
+            f"{details}"
+        )
+    return rows
+
+
+def write_manifest(
+    config_path: Path,
+    config: Dict[str, Any],
+    stage_a: Sequence[str],
+    stage_b: Sequence[str],
+    comparison: Sequence[str],
+    integrity_audit: Sequence[str],
+    quarantine_dir: Path | None = None,
+) -> Path:
     output_dir = resolve(config["paths"]["output_dir"])
     manifest = {
         "created_utc": datetime.now(timezone.utc).isoformat(),
@@ -458,6 +585,9 @@ def write_manifest(config_path: Path, config: Dict[str, Any], stage_a: Sequence[
         "stage_b_command_shell": shlex.join(stage_b),
         "comparison_command": list(comparison),
         "comparison_command_shell": shlex.join(comparison),
+        "integrity_audit_command": list(integrity_audit),
+        "integrity_audit_command_shell": shlex.join(integrity_audit),
+        "quarantine_dir": str(quarantine_dir) if quarantine_dir else "",
         "ranking_source": "Stage B classifier-only logreg_l2",
         "primary_threshold_strategy": EXPECTED_PRIMARY_THRESHOLD,
         "threshold_selection": "true_inner_cv_oof",
@@ -467,7 +597,13 @@ def write_manifest(config_path: Path, config: Dict[str, Any], stage_a: Sequence[
     return path
 
 
-def write_command_log(config: Dict[str, Any], stage_a_rc: int | None, stage_b_rc: int | None, comparison_rc: int | None) -> None:
+def write_command_log(
+    config: Dict[str, Any],
+    stage_a_rc: int | None,
+    stage_b_rc: int | None,
+    comparison_rc: int | None,
+    quarantine_dir: Path | None = None,
+) -> None:
     output_dir = resolve(config["paths"]["output_dir"])
     payload = {
         "created_utc": datetime.now(timezone.utc).isoformat(),
@@ -481,6 +617,7 @@ def write_command_log(config: Dict[str, Any], stage_a_rc: int | None, stage_b_rc
         "ranking_source": "Stage B classifier-only logreg_l2",
         "primary_threshold_strategy": EXPECTED_PRIMARY_THRESHOLD,
         "threshold_selection": "true_inner_cv_oof",
+        "quarantine_dir": str(quarantine_dir) if quarantine_dir else "",
         "tensor_modified": False,
         "metadata_modified": False,
         "ledger_modified": False,
@@ -513,7 +650,10 @@ def main() -> int:
     stage_a = build_stage_a_command(config, python_exe)
     stage_b = build_stage_b_command(config, python_exe)
     comparison = build_comparison_command(config, python_exe)
+    integrity_audit = build_integrity_audit_command(config, python_exe)
     params = config["parameters"]
+    output_dir = resolve(config["paths"]["output_dir"])
+    stale = stale_output_markers(output_dir)
     mode = "DRY-RUN" if args.dry_run else "REAL RUN (CONFIRMED)"
     print(f"Config         : {args.config}")
     print(f"Source config  : {args.source_config}")
@@ -542,29 +682,56 @@ def main() -> int:
     print(shlex.join(stage_b))
     print("\nComparison command:")
     print(shlex.join(comparison))
+    print("\nIntegrity audit command:")
+    print(shlex.join(integrity_audit))
+    print("\nClean-run policy:")
+    print("Real training refuses any existing fold_*, classifier_only_readout, latent_cache, all_folds_metrics, summary_metrics, or run_manifest.json unless --force-clean is passed.")
+    if stale:
+        print(f"Detected stale markers in output_dir: {len(stale)}")
+        for marker in stale[:20]:
+            print(f"  - {marker}")
+        if len(stale) > 20:
+            print(f"  ... {len(stale) - 20} more")
+        if args.dry_run:
+            print("Dry-run only: no quarantine or cleanup was performed.")
+    else:
+        print("No stale markers detected in output_dir.")
     if args.dry_run:
         print("\nDry-run complete. Training was NOT launched.")
         return 0
 
-    ensure_output_prepared(config)
-    manifest = write_manifest(args.config, config, stage_a, stage_b, comparison)
+    quarantine_dir = ensure_output_prepared(config, force_clean=args.force_clean)
+    run_start_epoch = time.time()
+    manifest = write_manifest(args.config, config, stage_a, stage_b, comparison, integrity_audit, quarantine_dir=quarantine_dir)
     print(f"\nRun manifest written: {manifest}")
     completed = subprocess.run(stage_a, cwd=PROJECT_ROOT, check=False)
-    write_command_log(config, completed.returncode, None, None)
+    write_command_log(config, completed.returncode, None, None, quarantine_dir=quarantine_dir)
     if completed.returncode != 0:
         return int(completed.returncode)
+    fresh_rows = verify_fresh_vae_checkpoints(config, run_start_epoch)
+    print("[fresh-checkpoint] All fold_1..fold_5 VAE checkpoints exist and are newer than this run start.")
+    for row in fresh_rows:
+        print(f"  - fold {row['fold']}: {row['mtime_iso']} {row['path']}")
     if args.skip_classifier_readout:
         print("Stage A completed. Stage B skipped.")
         return 0
     readout_completed = subprocess.run(stage_b, cwd=PROJECT_ROOT, check=False)
-    write_command_log(config, completed.returncode, readout_completed.returncode, None)
+    write_command_log(config, completed.returncode, readout_completed.returncode, None, quarantine_dir=quarantine_dir)
     if readout_completed.returncode != 0:
         return int(readout_completed.returncode)
+    print("\nStage B completed. Run this integrity audit before considering promotion:")
+    print(shlex.join(integrity_audit))
     if args.skip_comparison:
         print("Stage B completed. Comparison skipped.")
         return 0
     comparison_completed = subprocess.run(comparison, cwd=PROJECT_ROOT, check=False)
-    write_command_log(config, completed.returncode, readout_completed.returncode, comparison_completed.returncode)
+    write_command_log(
+        config,
+        completed.returncode,
+        readout_completed.returncode,
+        comparison_completed.returncode,
+        quarantine_dir=quarantine_dir,
+    )
     return int(comparison_completed.returncode)
 
 

@@ -1,0 +1,56 @@
+{
+  "audit_name": "old_ablation_lineage_audit_20260701",
+  "generated_utc": "2026-07-01",
+  "auditor": "claude-sonnet-4-6 (read-only)",
+  "mode": "read_only",
+  "training_launched": false,
+  "files_modified": false,
+  "source_dirs_read": [
+    "results/revision_bspc_2026/adni_v5_1_batch20260514b_greedy_fast_channel_selection",
+    "results/revision_bspc_2026/adni_v5_1_batch20260514b_greedy_fast_channel_selection_3x3",
+    "results/revision_bspc_2026/adni_v5_1_batch20260514b_greedy_fast_channel_selection_3x3_triple_lookahead_1_4",
+    "results/revision_bspc_2026/fast_meta647_ablation_results_audit_20260622",
+    "results/revision_bspc_2026/channel_ablation_evidence_audit_20260620",
+    "results/revision_bspc_2026/ch521_full5x5_preflight_20260622",
+    "results/revision_bspc_2026/ch521_stageB_completion_decision_20260623",
+    "results/revision_bspc_2026/ch521_full5x5_postrun_decision_audit_20260623",
+    "results/revision_bspc_2026/ch521_beta0p83_exploratory_preflight_20260623",
+    "results/revision_bspc_2026/fast_meta647_valsplitfix_preflight_20260622"
+  ],
+  "big_disk_dirs_checked": [
+    "/media/diego/Datos/vae_AD_results/revision_bspc_2026/recover035_ch521_latent384_beta3p75_T80_h10000_p560_full5x5_20260622",
+    "/media/diego/Datos/vae_AD_results/revision_bspc_2026/recover035_ch521_latent384_beta3p75_T80_h10000_p560_full5x5_meta647_20260622",
+    "/media/diego/Datos/vae_AD_results/revision_bspc_2026/recover035_ch521_latent384_beta0p83_T80_h10000_p560_full5x5_meta647_EXPLORATORY_20260623",
+    "/media/diego/Datos/vae_AD_results/revision_bspc_2026/fast128_all7_finalcohort_greedy_screen_meta647_valsplitfix_20260622",
+    "/media/diego/Datos/vae_AD_results/revision_bspc_2026/fast128_all7_finalcohort_greedy_screen_valsplitfix_20260622",
+    "/media/diego/Datos/vae_AD_results/revision_bspc_2026/fast128_all7_finalcohort_greedy_screen_20260621"
+  ],
+  "output_files": [
+    "old_ablation_file_inventory.csv",
+    "old_ablation_key_metrics.csv",
+    "old_ablation_config_comparison.csv",
+    "old_ablation_lineage_summary.md",
+    "ch521_stageb_decision_summary.md",
+    "recommended_next_runs.md",
+    "command_log.json"
+  ],
+  "key_findings": [
+    "Source of AUC~0.78-0.79: FAST meta647 [5,2,1] (ablation_canales.py, 300ep, ld=128) mean AUC=0.7897",
+    "FAST 3x3 [1] (run_vae_clf, 960ep, ld=128) mean AUC=0.7621 — different script and epoch count",
+    "Epochs discrepancy resolved: ablation_canales runs used 300ep; run_vae_clf runs used 960ep",
+    "ch521 FULL 5x5 [5,2,1] Stage B: AUC=0.7764, PR-AUC=0.5260 — REJECTED (both gates fail)",
+    "[1,0,2] was NOT evaluated in the FAST meta647 greedy screen",
+    "Channel rankings differ between ablation_canales (ch5 wins) and run_vae_clf (ch1 wins)",
+    "FAST++ planned [ch5,0,1] arm already covers the DistanceCorr hypothesis correctly",
+    "No additional FAST++ arms recommended from this lineage review"
+  ],
+  "guardrails_confirmed": {
+    "no_training": true,
+    "no_tensor_modification": true,
+    "no_metadata_modification": true,
+    "no_manuscript_modification": true,
+    "no_prediction_modification": true,
+    "no_heavy_artifact_copy": true,
+    "read_only_source_dirs": true
+  }
+}

@@ -1,0 +1,43 @@
+source_dir,file,size_bytes,date_modified,inferred_role
+adni_v5_1_batch20260514b_greedy_fast_channel_selection,README.md,2043,2026-05-15,Greedy FAST v1 (outer=5 stale) state and method description
+adni_v5_1_batch20260514b_greedy_fast_channel_selection,channel_set_metrics.csv,10717,2026-05-15,Per-channel AUC/PR-AUC/BA metrics (7 single-channel runs outer=5 — STALE)
+adni_v5_1_batch20260514b_greedy_fast_channel_selection,completed_runs.csv,2572,2026-05-15,Run completion status log (noted as outer=5 invalid for 3x3 ranking)
+adni_v5_1_batch20260514b_greedy_fast_channel_selection,greedy_selection_trace.csv,490,2026-05-15,Greedy step trace (only step 1 complete; stopped at [1] anchor)
+adni_v5_1_batch20260514b_greedy_fast_channel_selection,final_greedy_ranking.csv,10736,2026-05-15,Final ranking (same as channel_set_metrics; only singles evaluated)
+adni_v5_1_batch20260514b_greedy_fast_channel_selection,configs/ch0.json,4122,2026-05-15,Config for ch0 (OMST) — outer=5 stale run
+adni_v5_1_batch20260514b_greedy_fast_channel_selection,configs/ch1.json,4117,2026-05-15,Config for ch1 (PearsonFull) — outer=5 stale run
+adni_v5_1_batch20260514b_greedy_fast_channel_selection,configs/ch2.json,4106,2026-05-15,Config for ch2 (MI-kNN) — outer=5 stale run
+adni_v5_1_batch20260514b_greedy_fast_channel_selection,configs/ch5.json,4102,2026-05-15,Config for ch5 (DistanceCorr) — outer=5 stale run
+adni_v5_1_batch20260514b_greedy_fast_channel_selection,planned_candidates_by_step.csv,20453,2026-05-15,Planned step-2 candidates (not run in this dir)
+adni_v5_1_batch20260514b_greedy_fast_channel_selection_3x3,README.md,2822,2026-05-16,Greedy FAST 3x3 v2 — state (step 2 complete; accepted [1])
+adni_v5_1_batch20260514b_greedy_fast_channel_selection_3x3,channel_set_metrics.csv,17556,2026-05-16,All 13 channel-set metrics (7 singles + 6 pairs) at 3x3 outer/inner folds
+adni_v5_1_batch20260514b_greedy_fast_channel_selection_3x3,completed_runs.csv,2465,2026-05-16,Run completion status (all 13 complete)
+adni_v5_1_batch20260514b_greedy_fast_channel_selection_3x3,greedy_selection_trace.csv,927,2026-05-16,Greedy trace: step1=[1] AUC=0.7621; step2 best=[1,4] delta=0.0027 — stopped by 1-SE rule
+adni_v5_1_batch20260514b_greedy_fast_channel_selection_3x3,configs/ch1.json,4129,2026-05-15,Config for ch1 3x3 (latent_dim=128 beta=2.5 epochs=960)
+adni_v5_1_batch20260514b_greedy_fast_channel_selection_3x3,stale_outer5_outputs.csv,3536,2026-05-16,List of stale outer=5 run artifacts from earlier pass
+adni_v5_1_batch20260514b_greedy_fast_channel_selection_3x3_triple_lookahead_1_4,README.md,1820,2026-05-16,Triple lookahead from [1,4] — exploratory step 3 candidates
+adni_v5_1_batch20260514b_greedy_fast_channel_selection_3x3_triple_lookahead_1_4,triple_lookahead_ranking.csv,8860,2026-05-16,All 5 triple lookahead metrics ranked by mean AUC
+adni_v5_1_batch20260514b_greedy_fast_channel_selection_3x3_triple_lookahead_1_4,triple_lookahead_vs_single_pair_summary.csv,12321,2026-05-16,Comparison of [1,4,X] triples vs singles and pairs
+fast_meta647_ablation_results_audit_20260622,fast_greedy_ablation_table.md,1622,2026-06-22,FAST meta647 greedy path summary (DistanceCorr→[5,2,1])
+fast_meta647_ablation_results_audit_20260622,fast_stepwise_candidate_table.md,2918,2026-06-22,All candidates per greedy step (meta647 run)
+fast_meta647_ablation_results_audit_20260622,fast_vs_full_evidence_context.md,3148,2026-06-22,Evidence table comparing FAST vs FULL AUCs with caveats
+fast_meta647_ablation_results_audit_20260622,final_recommendation.md,2009,2026-06-22,Decision: do not replace [1,0,2] based on FAST alone
+fast_meta647_ablation_results_audit_20260622,metadata_intersection_runtime_audit.md,1523,2026-06-22,Cohort: N=647 (646 effective) 3-fold split statistics
+fast_meta647_ablation_results_audit_20260622,completion_integrity.md,UNKNOWN,2026-06-22,Integrity check: 35 checks passed
+channel_ablation_evidence_audit_20260620,claim_validity_audit.md,UNKNOWN,2026-06-20,Audit of manuscript claims A/B/C/D vs evidence
+channel_ablation_evidence_audit_20260620,comparable_model_evidence_table.csv,UNKNOWN,2026-06-20,Side-by-side FULL comparisons for comparable models
+channel_ablation_evidence_audit_20260620,paired_oof_bootstrap_comparisons.csv,UNKNOWN,2026-06-20,Bootstrap AUC deltas between pairs of models
+ch521_full5x5_preflight_20260622,candidate_config.json,6127,2026-06-22,FULL [5,2,1] config (latent_dim=384 beta=3.75 epochs=10000 5x5)
+ch521_full5x5_preflight_20260622,final_recommendation.md,2508,2026-06-22,Preflight PASS; launch allowed
+ch521_full5x5_preflight_20260622,launch_commands.txt,5168,2026-06-22,Exact CLI for [5,2,1] FULL run
+ch521_full5x5_preflight_20260622,promotion_gate.md,1831,2026-06-22,Locked promotion gate: AUC>0.782951 PR-AUC>=0.559873
+ch521_stageB_completion_decision_20260623,stageb_primary_metrics.csv,620,2026-06-23,Stage B primary pooled metrics for ch521 [5,2,1] vs reference
+ch521_stageB_completion_decision_20260623,final_recommendation.md,1859,2026-06-23,REJECT: AUC=0.7764 fails gate (0.7830); PR-AUC=0.5260 fails gate (0.5599)
+ch521_stageB_completion_decision_20260623,paired_bootstrap_vs_reference.csv,UNKNOWN,2026-06-23,Bootstrap: Δ AUC=-0.0187 CI[-0.043 +0.005] p=0.938
+ch521_full5x5_postrun_decision_audit_20260623,final_recommendation.md,1720,2026-06-23,Pre-Stage-B audit: do not promote without full Stage B readout
+ch521_full5x5_postrun_decision_audit_20260623,stagea_foldwise_metrics.csv,11241,2026-06-23,Stage A foldwise AUCs for [5,2,1] and reference (logreg+svm)
+ch521_full5x5_postrun_decision_audit_20260623,stagea_pooled_metrics.csv,1053,2026-06-23,Stage A pooled: [5,2,1] logreg AUC=0.761512 PR-AUC=0.501564
+ch521_full5x5_postrun_decision_audit_20260623,stageb_primary_metrics.csv,620,2026-06-23,Stage B pooled (after readout completion): AUC=0.776426 PR-AUC=0.525994
+ch521_full5x5_postrun_decision_audit_20260623,stageb_missing_postprocessing_command.md,1864,2026-06-23,Command to run Stage B readout for [5,2,1] (not yet run at this audit)
+ch521_beta0p83_exploratory_preflight_20260623,candidate_config.json,6258,2026-06-23,Config for [5,2,1] beta=0.83 exploratory variant
+ch521_beta0p83_exploratory_preflight_20260623,final_preflight_recommendation.md,916,2026-06-23,PASS preflight; launch allowed but NOT launched

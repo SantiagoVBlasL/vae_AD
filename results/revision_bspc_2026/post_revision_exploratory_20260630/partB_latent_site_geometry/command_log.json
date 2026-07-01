@@ -1,0 +1,35 @@
+{
+  "script": "/home/diego/proyectos/vae_AD/results/revision_bspc_2026/post_revision_exploratory_20260630/partB_latent_site_geometry/run_latent_site_geometry.py",
+  "run_name": "recover035_latent384_beta3p75_T80_h10000_p560_full5x5",
+  "started_utc": "2026-07-01T00:11:04.974944+00:00",
+  "finished_utc": "2026-07-01T00:11:14.986259+00:00",
+  "n_subjects": 397,
+  "latent_dim": 384,
+  "umap_available": true,
+  "outputs": [
+    "centroid_distance_tables.csv",
+    "centroid_distance_tables_site.csv",
+    "site_radius_tables.csv",
+    "silhouette_summary.csv",
+    "prediction_error_by_site_geometry.csv",
+    "knn_decodability.csv",
+    "error_by_manufacturer_centroid_dist.csv",
+    "error_type_by_manufacturer.csv",
+    "latent_site_geometry_report.md",
+    "figures/pca_pc1_pc2_diagnosis_manufacturer.pdf",
+    "figures/pca_pc1_pc2_error_type.pdf",
+    "figures/centroid_distance_by_error_type.pdf",
+    "figures/silhouette_per_sample.pdf",
+    "figures/knn_decodability.pdf",
+    "figures/umap_diagnosis_manufacturer.pdf",
+    "figures/umap_error_type.pdf",
+    "figures/umap_site.pdf"
+  ],
+  "guardrails": {
+    "no_vae_retraining": true,
+    "no_tensor_edits": true,
+    "no_metadata_edits": true,
+    "no_ig_shap_recomputation": true,
+    "read_only_source_files": true
+  }
+}

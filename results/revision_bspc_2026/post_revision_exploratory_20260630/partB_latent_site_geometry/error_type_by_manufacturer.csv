@@ -1,0 +1,6 @@
+Manufacturer,error_type,count
+GE,FN,20
+GE,FP,1
+Philips,FN,33
+Philips,FP,8
+SIEMENS,FN,23

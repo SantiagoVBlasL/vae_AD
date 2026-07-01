@@ -1,0 +1,109 @@
+{
+  "run_name": "ablation_ch1_0_2_pearsonFull_OMST_MI_fast3fold_800ep",
+  "description": "Three-channel positive control \u2014 matches promoted model channel set. Expected outcome: AUC \u2248 promoted (0.795). Any substantial deviation flags a hyperparameter or loss-function sensitivity.",
+  "optional": false,
+  "python_executable": "/home/diego/anaconda3/envs/vae_ad/bin/python",
+  "channel_names_master_in_tensor_order": [
+    "Pearson_OMST_GCE_Signed_Weighted",
+    "Pearson_Full_FisherZ_Signed",
+    "MI_KNN_Symmetric",
+    "dFC_AbsDiffMean",
+    "dFC_StdDev",
+    "DistanceCorr",
+    "Granger_F_lag1"
+  ],
+  "selected_channel_names": [
+    "Pearson_Full_FisherZ_Signed",
+    "Pearson_OMST_GCE_Signed_Weighted",
+    "MI_KNN_Symmetric"
+  ],
+  "ablation_note": "FAST 3-fold screening run. recon_loss_mode=offdiag_channelmean_sum is MANDATORY for cross-channel comparability (normalises reconstruction loss by number of channels). Do not compare to runs using mse_sum_batchmean_current.",
+  "gate_criteria": {
+    "primary": "OOF ROC-AUC (logreg_l2, 3-fold) \u2265 0.760 (threshold = promoted baseline \u2212 0.035)",
+    "secondary": "OOF PR-AUC \u2265 0.500",
+    "stability": "Fold-wise AUC std \u2264 0.07",
+    "leakage": "Manufacturer scanner-leakage balanced-accuracy \u2264 0.45 (chance=0.33)",
+    "active_units": "Active latent units (var > 1e-4) \u2265 50 across all folds",
+    "positive_control": "ch1_0_2 control run AUC must be within 0.03 of promoted baseline (0.795 \u00b1 0.03). If control fails, other results are unreliable.",
+    "note": "Gate criteria are necessary but not sufficient for promotion. FULL 5\u00d75 promotion requires additional sign-off and a replication run. offdiag_channelmean_sum loss is mandatory for cross-channel comparisons."
+  },
+  "paths": {
+    "training_script": "/home/diego/proyectos/vae_AD/scripts/run_vae_clf_ad_inference.py",
+    "global_tensor_path": "/media/diego/Datos/vae_AD_data/revision_bspc_2026/adni_expanded_v5_1_batch20260514b_no_pybandpass/subject_tensors/GLOBAL_TENSOR_ADNI_expanded_v5_1_batch20260514b_no_pybandpass.npz",
+    "metadata_path": "/home/diego/proyectos/vae_AD/results/revision_bspc_2026/adni_035_metadata_rescue_preflight/patched_metadata_candidate.csv",
+    "output_dir": "/home/diego/proyectos/vae_AD/results/revision_bspc_2026/post_revision_exploratory_20260630/partA_channel_ablation_preflight/runs/ablation_ch1_0_2_pearsonFull_OMST_MI_fast3fold_800ep",
+    "big_disk_output_dir": "/home/diego/proyectos/vae_AD/results/revision_bspc_2026/post_revision_exploratory_20260630/partA_channel_ablation_preflight/runs/ablation_ch1_0_2_pearsonFull_OMST_MI_fast3fold_800ep"
+  },
+  "parameters": {
+    "channels_to_use": [
+      1,
+      0,
+      2
+    ],
+    "epochs_vae": 800,
+    "lr_scheduler_T0": 80,
+    "cyclical_beta_n_cycles": 10,
+    "cyclical_beta_ratio_increase": 0.4,
+    "early_stopping_patience_vae": 200,
+    "beta_vae": 3.75,
+    "latent_dim": 384,
+    "num_conv_layers_encoder": 4,
+    "decoder_type": "convtranspose",
+    "vae_block_order": "legacy_act_norm",
+    "vae_dropout_scope": "legacy_all",
+    "dropout_rate_vae": 0.15,
+    "vae_final_activation": "tanh",
+    "intermediate_fc_dim_vae": "quarter",
+    "use_layernorm_vae_fc": false,
+    "recon_loss_mode": "offdiag_channelmean_sum",
+    "norm_mode": "zscore_offdiag",
+    "outer_folds": 3,
+    "inner_folds": 3,
+    "repeated_outer_folds_n_repeats": 1,
+    "classifier_types": [
+      "logreg"
+    ],
+    "classifier_calibrate": false,
+    "classifier_use_class_weight": true,
+    "classifier_stratify_cols": [
+      "Manufacturer"
+    ],
+    "vae_stratify_cols": [
+      "Manufacturer"
+    ],
+    "latent_features_type": "mu",
+    "gridsearch_scoring": "roc_auc",
+    "n_iter_logreg": 100,
+    "lr_vae": 0.0001,
+    "lr_scheduler_type": "cosine_warm",
+    "lr_scheduler_eta_min": 5e-07,
+    "lr_scheduler_patience_vae": 15,
+    "weight_decay_vae": 5e-07,
+    "batch_size": 64,
+    "vae_val_split_ratio": 0.2,
+    "vae_train_sampler_strategy": "none",
+    "seed": 42,
+    "num_workers": 4,
+    "log_interval_epochs_vae": 10,
+    "metadata_features": [
+      "Age",
+      "Sex"
+    ],
+    "save_fold_artefacts": true,
+    "save_vae_training_history": true,
+    "qc_analyze_distributions": true,
+    "qc_check_scanner_leakage": true,
+    "qc_rate_distortion": true,
+    "qc_latent_information": true,
+    "qc_mi_n_neighbors": 3,
+    "qc_mi_top_k": 10,
+    "qc_rd_log_base": 2.0,
+    "qc_tc_ridge": 1e-06,
+    "qc_var_eps_active": 0.0001,
+    "use_optuna_pruner": false,
+    "use_smote": false,
+    "tune_sampler_params": false,
+    "mlp_classifier_hidden_layers": "64,16",
+    "n_iter_svm": 1
+  }
+}

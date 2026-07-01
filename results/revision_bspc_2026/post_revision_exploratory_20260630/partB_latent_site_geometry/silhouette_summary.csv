@@ -1,0 +1,4 @@
+grouping,n_classes,silhouette,n_samples_used,note
+diagnosis,2,-0.004951372742652893,397,
+manufacturer,3,0.0011241422034800053,397,
+site,35,-0.09540057182312012,397,

@@ -1,0 +1,4 @@
+path,exists,expected
+/media/diego/Datos/vae_AD_results/revision_bspc_2026/post_revision_exploratory_20260630/fast_meta647_greedy900_cyclematched_20260701,False,must be absent before launch
+/media/diego/Datos/vae_AD_results/revision_bspc_2026/_launch_logs/post_revision_exploratory_20260630/fast_meta647_greedy900_cyclematched_20260701,False,may be created by launch
+/home/diego/proyectos/vae_AD/results/revision_bspc_2026/post_revision_exploratory_20260630/fast_meta647_greedy900_cyclematched_preflight_20260701,True,preflight output directory

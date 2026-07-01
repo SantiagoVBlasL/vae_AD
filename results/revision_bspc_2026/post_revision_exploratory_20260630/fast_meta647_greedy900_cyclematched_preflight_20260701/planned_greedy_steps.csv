@@ -1,0 +1,14 @@
+phase,runtime_step,candidate_set_template,channel_names,candidate_count_this_phase,dynamic_dependency,required_for_full_path
+step0_single,0,[0],OMST,7,none,True
+step0_single,0,[1],Pearson_Full,7,none,True
+step0_single,0,[2],MI_KNN,7,none,True
+step0_single,0,[3],dFC_AbsDiffMean,7,none,True
+step0_single,0,[4],dFC_StdDev,7,none,True
+step0_single,0,[5],DistanceCorr,7,none,True
+step0_single,0,[6],Granger,7,none,True
+greedy_addition,1,best_step0 + each_remaining_channel,computed at runtime from previous best,6,best channel set selected at step 0,True
+greedy_addition,2,best_step1 + each_remaining_channel,computed at runtime from previous best,5,best channel set selected at step 1,True
+greedy_addition,3,best_step2 + each_remaining_channel,computed at runtime from previous best,4,best channel set selected at step 2,True
+greedy_addition,4,best_step3 + each_remaining_channel,computed at runtime from previous best,3,best channel set selected at step 3,True
+greedy_addition,5,best_step4 + each_remaining_channel,computed at runtime from previous best,2,best channel set selected at step 4,True
+greedy_addition,6,best_step5 + each_remaining_channel,computed at runtime from previous best,1,best channel set selected at step 5,True

@@ -1,0 +1,17 @@
+# Loss History Availability Audit
+
+| item                                  | supported   | note                        |
+|:--------------------------------------|:------------|:----------------------------|
+| full greedy over all channels         | True        |                             |
+| resume/skip completed cache           | True        |                             |
+| native dry-run/preflight              | True        |                             |
+| strict metadata intersection flag     | True        |                             |
+| strict VAE val split abort flag       | True        |                             |
+| passes save VAE history flag          | True        |                             |
+| child saves per-fold history joblib   | True        |                             |
+| child saves aggregate history joblib  | True        |                             |
+| history stores train loss/recon/KLD   | True        |                             |
+| history stores val loss/recon/KLD     | True        |                             |
+| history stores beta                   | True        |                             |
+| history stores learning rate          | True        |                             |
+| history stores active units per epoch | False       | not found in current script |

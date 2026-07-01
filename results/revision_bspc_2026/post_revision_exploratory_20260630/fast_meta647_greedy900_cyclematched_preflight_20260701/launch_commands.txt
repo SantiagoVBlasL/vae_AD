@@ -1,0 +1,10 @@
+# Guarded launch commands
+
+# Full greedy path plus forced sentinels, after explicit approval only:
+/home/diego/proyectos/vae_AD/results/revision_bspc_2026/post_revision_exploratory_20260630/fast_meta647_greedy900_cyclematched_preflight_20260701/guarded_launch.sh --confirm-training full
+
+# Forced sentinel candidates only, after explicit approval only:
+/home/diego/proyectos/vae_AD/results/revision_bspc_2026/post_revision_exploratory_20260630/fast_meta647_greedy900_cyclematched_preflight_20260701/guarded_launch.sh --confirm-training sentinel
+
+# Native FAST dry-run command for operator verification, no training:
+/home/diego/anaconda3/envs/vae_ad/bin/python /home/diego/proyectos/vae_AD/scripts/ablation_canales.py --global_tensor_path /media/diego/Datos/vae_AD_data/revision_bspc_2026/adni_expanded_v5_1_batch20260514b_no_pybandpass/subject_tensors/GLOBAL_TENSOR_ADNI_expanded_v5_1_batch20260514b_no_pybandpass.npz --metadata_path /home/diego/proyectos/vae_AD/results/revision_bspc_2026/adni_035_metadata_rescue_preflight/patched_metadata_candidate.csv --output_root /media/diego/Datos/vae_AD_results/revision_bspc_2026/post_revision_exploratory_20260630/fast_meta647_greedy900_cyclematched_20260701 --candidate_channels 0 1 2 3 4 5 6 --metric auc --min_improvement 0.001 --outer_folds 3 --repeats 1 --epochs_vae 900 --early_stop 30 --beta_vae 2.5 --latent_dim 128 --dropout_vae 0.15 --batch_size 64 --beta_cycles 12 --cyclical_beta_ratio 0.4 --lr_sched_type cosine_warm --lr_sched_T0 30 --lr_sched_eta_min 5e-07 --norm_mode zscore_offdiag --vae_val_split_ratio 0.2 --num_workers 4 --seed 42 --vae_abort_if_val_split_fails --strict_metadata_intersection --classifier_use_class_weight --save_vae_training_history --no_early_stop --dry-run

@@ -1,0 +1,50 @@
+{
+  "timestamp_utc": "2026-07-01T04:30:22.115968+00:00",
+  "cwd": "/home/diego/proyectos/vae_AD",
+  "did_train": false,
+  "did_infer": false,
+  "did_oasis": false,
+  "did_modify_existing_artifacts": false,
+  "inputs": {
+    "old_config": "/home/diego/proyectos/vae_AD/results/revision_bspc_2026/fast_meta647_valsplitfix_preflight_20260622/fast_meta647_candidate_config.json",
+    "old_audit": "/home/diego/proyectos/vae_AD/results/revision_bspc_2026/fast_meta647_ablation_results_audit_20260622",
+    "tensor": "/media/diego/Datos/vae_AD_data/revision_bspc_2026/adni_expanded_v5_1_batch20260514b_no_pybandpass/subject_tensors/GLOBAL_TENSOR_ADNI_expanded_v5_1_batch20260514b_no_pybandpass.npz",
+    "metadata": "/home/diego/proyectos/vae_AD/results/revision_bspc_2026/adni_035_metadata_rescue_preflight/patched_metadata_candidate.csv"
+  },
+  "outputs": [
+    "README.md",
+    "config_comparison_fast300_vs_greedy900.csv",
+    "forced_sentinel_candidates.csv",
+    "greedy_algorithm_plan.md",
+    "guarded_launch.sh",
+    "instrumentation_patch_plan.md",
+    "launch_commands.txt",
+    "launch_greedy900_full.sh",
+    "launch_greedy900_sentinel_only.sh",
+    "loss_history_availability_audit.md",
+    "old_fast300_config_summary.md",
+    "old_fast300_stepwise_reference.csv",
+    "output_path_stale_audit.csv",
+    "planned_greedy_steps.csv",
+    "plot_fast_meta647_greedy900_losses.py",
+    "preflight_status.md",
+    "resource_estimate.md",
+    "runner_support_audit.csv",
+    "tensor_metadata_validation.csv"
+  ],
+  "notes": [
+    "Prepared launch scripts only; no training launched.",
+    "New output root checked for absence at generation time."
+  ],
+  "commands_run": [
+    "/home/diego/anaconda3/envs/vae_ad/bin/python -m py_compile scripts/revision_bspc_2026/prepare_fast_meta647_greedy900_preflight_20260701.py",
+    "/home/diego/anaconda3/envs/vae_ad/bin/python scripts/revision_bspc_2026/prepare_fast_meta647_greedy900_preflight_20260701.py",
+    "/home/diego/anaconda3/envs/vae_ad/bin/python -m py_compile results/revision_bspc_2026/post_revision_exploratory_20260630/fast_meta647_greedy900_cyclematched_preflight_20260701/plot_fast_meta647_greedy900_losses.py"
+  ],
+  "validation": {
+    "prep_script_py_compile": "PASS",
+    "plot_script_py_compile": "PASS",
+    "training_launched": false,
+    "inference_launched": false
+  }
+}

@@ -1,0 +1,23 @@
+step,dir,old_fast300_channels,old_fast300_channel_names,fold1_auc,fold2_auc,fold3_auc,mean_auc,std_auc,se_auc,selected,reference_only
+0,single_ch0,[0],OMST,0.5458,0.6663,0.7137,0.6419,0.0866,0.05,False,True
+0,single_ch1,[1],Pearson_Full,0.683,0.7528,0.7641,0.7333,0.0439,0.0253,False,True
+0,single_ch2,[2],MI_KNN,0.6694,0.74,0.7262,0.7119,0.0374,0.0216,False,True
+0,single_ch3,[3],dFC_AbsDiff,0.6239,0.5984,0.6494,0.6239,0.0255,0.0147,False,True
+0,single_ch4,[4],dFC_StdDev,0.5815,0.6409,0.6844,0.6356,0.0516,0.0298,False,True
+0,single_ch5,[5],DistanceCorr,0.7288,0.67,0.8247,0.7412,0.0781,0.0451,True,True
+0,single_ch6,[6],Granger,0.5542,0.5153,0.555,0.5415,0.0227,0.0131,False,True
+1,step1_add0_k2,"[5, 0]",DistanceCorr+OMST,0.7591,0.7219,0.7978,0.7596,0.038,0.0219,False,True
+1,step1_add1_k2,"[5, 1]",DistanceCorr+Pearson_Full,0.753,0.7391,0.7791,0.7571,0.0203,0.0117,False,True
+1,step1_add2_k2,"[5, 2]",DistanceCorr+MI_KNN,0.7497,0.8231,0.7716,0.7815,0.0377,0.0218,True,True
+1,step1_add3_k2,"[5, 3]",DistanceCorr+dFC_AbsDiff,0.7512,0.7522,0.7481,0.7505,0.0021,0.0012,False,True
+1,step1_add4_k2,"[5, 4]",DistanceCorr+dFC_StdDev,0.6936,0.6888,0.8116,0.7313,0.0695,0.0401,False,True
+1,step1_add6_k2,"[5, 6]",DistanceCorr+Granger,0.7676,0.6909,0.6787,0.7124,0.0482,0.0278,False,True
+2,step2_add0_k3,"[5, 2, 0]",DistanceCorr+MI_KNN+OMST,0.7948,0.7053,0.8022,0.7674,0.0539,0.0311,False,True
+2,step2_add1_k3,"[5, 2, 1]",DistanceCorr+MI_KNN+Pearson_Full,0.7742,0.7794,0.8156,0.7897,0.0226,0.013,True,True
+2,step2_add3_k3,"[5, 2, 3]",DistanceCorr+MI_KNN+dFC_AbsDiff,0.7573,0.7184,0.8078,0.7612,0.0448,0.0259,False,True
+2,step2_add4_k3,"[5, 2, 4]",DistanceCorr+MI_KNN+dFC_StdDev,0.7709,0.7469,0.7609,0.7596,0.0121,0.007,False,True
+2,step2_add6_k3,"[5, 2, 6]",DistanceCorr+MI_KNN+Granger,0.7648,0.7497,0.7278,0.7474,0.0186,0.0107,False,True
+3,step3_add0_k4,"[5, 2, 1, 0]",DistanceCorr+MI_KNN+Pearson_Full+OMST,0.7564,0.7291,0.7784,0.7546,0.0247,0.0143,False,True
+3,step3_add3_k4,"[5, 2, 1, 3]",DistanceCorr+MI_KNN+Pearson_Full+dFC_AbsDiff,0.7509,0.7306,0.7909,0.7575,0.0307,0.0177,False,True
+3,step3_add4_k4,"[5, 2, 1, 4]",DistanceCorr+MI_KNN+Pearson_Full+dFC_StdDev,0.7576,0.7778,0.7734,0.7696,0.0106,0.0061,True,True
+3,step3_add6_k4,"[5, 2, 1, 6]",DistanceCorr+MI_KNN+Pearson_Full+Granger,0.747,0.7297,0.7497,0.7421,0.0108,0.0063,False,True

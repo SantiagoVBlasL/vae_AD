@@ -22,6 +22,9 @@ if SRC_DIR.is_dir():
     sys.path.insert(0, str(SRC_DIR))
 else:
     raise FileNotFoundError(f"No se encontró 'src/' en: {SRC_DIR}")
+REVISION_SCRIPT_DIR = PROJECT_ROOT / "scripts" / "revision_bspc_2026"
+if REVISION_SCRIPT_DIR.is_dir():
+    sys.path.insert(0, str(REVISION_SCRIPT_DIR))
 # --- Fin bootstrap ---
 
 import argparse
@@ -30,7 +33,7 @@ import gc
 import json
 import subprocess
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 from datetime import datetime, timezone
 import platform
 import joblib
@@ -68,10 +71,13 @@ import matplotlib.pyplot as plt
 # Proyecto
 from betavae_xai.models import (
     BLOCK_ORDER_CHOICES,
+    CONDITIONING_MODE_CHOICES,
     ConvolutionalVAE,
     DROPOUT_SCOPE_CHOICES,
+    build_vae_dropout_manifest,
     get_classifier_and_grid,
     get_available_classifiers,
+    summarize_vae_dropout_manifest,
 )
 from betavae_xai.analysis_qc.fold_qc import (
     log_group_distributions,
@@ -93,6 +99,23 @@ from betavae_xai.data.preprocessing import (
     normalize_inter_channel_fold,
     apply_normalization_params,
 )
+
+try:
+    from foldwise_combat_input_harmonization import (
+        channel_shift_summary as combat_channel_shift_summary,
+        dependency_status as combat_dependency_status,
+        fit_tensor_combat_channelwise,
+        manufacturer_centroid_separability_proxy,
+        normalize_manufacturer as combat_normalize_manufacturer,
+        transform_tensor_combat_channelwise,
+    )
+except Exception:  # pragma: no cover - only used when explicitly enabled
+    combat_channel_shift_summary = None  # type: ignore[assignment]
+    combat_dependency_status = None  # type: ignore[assignment]
+    fit_tensor_combat_channelwise = None  # type: ignore[assignment]
+    manufacturer_centroid_separability_proxy = None  # type: ignore[assignment]
+    combat_normalize_manufacturer = None  # type: ignore[assignment]
+    transform_tensor_combat_channelwise = None  # type: ignore[assignment]
 
 # --- logging & warnings: una sola vez ---
 logger = setup_logging(__name__)
@@ -131,6 +154,98 @@ def _filter_existing_cols(df: pd.DataFrame, cols: List[str]) -> List[str]:
     if df is None or df.empty:
         return []
     return [c for c in cols if c in df.columns]
+
+
+def _normalize_mfr_for_harmonization(series: pd.Series) -> pd.Series:
+    if combat_normalize_manufacturer is None:
+        return series.fillna("UNKNOWN").astype(str)
+    return series.map(combat_normalize_manufacturer).fillna("UNKNOWN").astype(str)
+
+
+def _write_foldwise_input_harmonization_subjects(
+    fold_output_dir: Path,
+    *,
+    fold: int,
+    split_name: str,
+    df: pd.DataFrame,
+) -> None:
+    cols = _filter_existing_cols(
+        df,
+        ["SubjectID", "tensor_idx", "ResearchGroup_Mapped", "Manufacturer", "Age", "Sex"],
+    )
+    out = df[cols].copy()
+    out.insert(0, "fold", int(fold))
+    out.insert(1, "input_harmonization_split", str(split_name))
+    out.to_csv(fold_output_dir / f"input_harmonization_{split_name}_subjects.csv", index=False)
+
+
+def _validate_foldwise_input_harmonization_guards(
+    *,
+    fit_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    batch_col: str,
+    covariates: List[str],
+    excluded_covariates: List[str],
+    fold_number: int,
+) -> Dict[str, Any]:
+    required_cols = ["SubjectID", "tensor_idx", batch_col, *covariates]
+    missing = [c for c in required_cols if c not in fit_df.columns or c not in test_df.columns]
+    if missing:
+        raise RuntimeError(f"Fold {fold_number} input harmonization missing required columns: {missing}")
+    diagnosis_like = {"ResearchGroup_Mapped", "Diagnosis", "DX", "label", "y"}
+    bad_covars = [c for c in covariates if c in diagnosis_like]
+    if bad_covars:
+        raise RuntimeError(f"Fold {fold_number} input harmonization covariates include diagnosis-like columns: {bad_covars}")
+    if not set(excluded_covariates).issuperset({"ResearchGroup_Mapped"}):
+        raise RuntimeError(
+            f"Fold {fold_number} input harmonization must explicitly exclude ResearchGroup_Mapped; "
+            f"got {excluded_covariates}"
+        )
+    fit_subjects = set(fit_df["SubjectID"].astype(str))
+    test_subjects = set(test_df["SubjectID"].astype(str))
+    overlap = sorted(fit_subjects.intersection(test_subjects))
+    if overlap:
+        raise RuntimeError(
+            f"Fold {fold_number} leakage guard failed: fit/test SubjectID overlap detected: {overlap[:20]}"
+        )
+    fit_mfr = _normalize_mfr_for_harmonization(fit_df[batch_col])
+    test_mfr = _normalize_mfr_for_harmonization(test_df[batch_col])
+    required_mfr = {"GE", "Philips", "SIEMENS"}
+    fit_levels = set(fit_mfr.unique())
+    missing_levels = sorted(required_mfr.difference(fit_levels))
+    if missing_levels:
+        raise RuntimeError(
+            f"Fold {fold_number} leakage guard failed: fit train/dev lacks Manufacturer levels {missing_levels}"
+        )
+    for covar in covariates:
+        if covar == "Age":
+            fit_age = pd.to_numeric(fit_df[covar], errors="coerce")
+            test_age = pd.to_numeric(test_df[covar], errors="coerce")
+            if fit_age.isna().any() or test_age.isna().any():
+                raise RuntimeError(
+                    f"Fold {fold_number} input harmonization has missing/non-numeric Age in fit/test."
+                )
+        elif covar == "Sex":
+            bad_fit = fit_df[covar].isna() | fit_df[covar].astype(str).str.strip().isin(["", "nan", "NaN", "None", "NA"])
+            bad_test = test_df[covar].isna() | test_df[covar].astype(str).str.strip().isin(["", "nan", "NaN", "None", "NA"])
+            if bad_fit.any() or bad_test.any():
+                raise RuntimeError(f"Fold {fold_number} input harmonization has missing Sex in fit/test.")
+    return {
+        "fold": int(fold_number),
+        "status": "PASS",
+        "fit_scope": "outer_train_dev_only",
+        "batch_col": str(batch_col),
+        "covariates_preserved": "+".join(covariates),
+        "excluded_covariates": "+".join(excluded_covariates),
+        "n_fit_subjects": int(len(fit_df)),
+        "n_test_subjects": int(len(test_df)),
+        "n_fit_test_subject_overlap": 0,
+        "fit_manufacturer_levels": ";".join(sorted(fit_levels)),
+        "test_manufacturer_levels": ";".join(sorted(set(test_mfr.unique()))),
+        "diagnosis_used_in_harmonizer": False,
+        "global_combat": False,
+        "oasis_used": False,
+    }
 
 
 def _validate_n_iter_value(classifier_type: str, value: Any) -> int:
@@ -219,7 +334,14 @@ def _get_score_1d(estimator, X):
 
 RECON_LOSS_MODE_CURRENT = "mse_sum_batchmean_current"
 RECON_LOSS_MODE_OFFDIAG_CHANNELMEAN = "offdiag_channelmean_sum"
-RECON_LOSS_MODES = (RECON_LOSS_MODE_CURRENT, RECON_LOSS_MODE_OFFDIAG_CHANNELMEAN)
+RECON_LOSS_MODE_MSE_OFFDIAG_CHANNEL_MEAN_SUM = "mse_offdiag_channel_mean_sum"
+RECON_LOSS_MODE_MSE_OFFDIAG_CHANNEL_WEIGHTED_SUM = "mse_offdiag_channel_weighted_sum"
+RECON_LOSS_MODES = (
+    RECON_LOSS_MODE_CURRENT,
+    RECON_LOSS_MODE_OFFDIAG_CHANNELMEAN,
+    RECON_LOSS_MODE_MSE_OFFDIAG_CHANNEL_MEAN_SUM,
+    RECON_LOSS_MODE_MSE_OFFDIAG_CHANNEL_WEIGHTED_SUM,
+)
 VAE_TRAIN_SAMPLER_NONE = "none"
 VAE_TRAIN_SAMPLER_MANUFACTURER = "manufacturer_balanced"
 VAE_TRAIN_SAMPLER_DIAGNOSIS_MANUFACTURER = "diagnosis_manufacturer_balanced"
@@ -228,6 +350,17 @@ VAE_TRAIN_SAMPLER_STRATEGIES = (
     VAE_TRAIN_SAMPLER_MANUFACTURER,
     VAE_TRAIN_SAMPLER_DIAGNOSIS_MANUFACTURER,
 )
+VAE_POOL_CURRENT_ALL = "current_all_pool"
+VAE_POOL_CN_AD_ONLY = "cn_ad_only_pool"
+VAE_POOL_BALANCED_CN_AD_MCI = "balanced_cn_ad_mci_pool"
+VAE_POOL_CN_AD_PLUS_MATCHED_MCI = "cn_ad_plus_matched_mci_pool"
+VAE_POOL_COMPOSITION_STRATEGIES = (
+    VAE_POOL_CURRENT_ALL,
+    VAE_POOL_CN_AD_ONLY,
+    VAE_POOL_BALANCED_CN_AD_MCI,
+    VAE_POOL_CN_AD_PLUS_MATCHED_MCI,
+)
+VAE_CONDITIONING_VAR_CHOICES = ("none", "Age", "age", "sex", "age_sex", "manufacturer")
 
 
 def _offdiag_mask_for_tensor(x: torch.Tensor) -> torch.Tensor:
@@ -239,27 +372,94 @@ def _offdiag_mask_for_tensor(x: torch.Tensor) -> torch.Tensor:
     return ~torch.eye(n_rois, dtype=torch.bool, device=x.device)
 
 
-def vae_reconstruction_loss(recon_x: torch.Tensor, x: torch.Tensor, mode: str = RECON_LOSS_MODE_CURRENT) -> torch.Tensor:
+def _channel_weights_for_tensor(
+    channel_weights: Optional[Sequence[float]],
+    x: torch.Tensor,
+) -> torch.Tensor:
+    if channel_weights is None:
+        raise ValueError(
+            f"recon_loss_channel_weights must be provided for {RECON_LOSS_MODE_MSE_OFFDIAG_CHANNEL_WEIGHTED_SUM}"
+        )
+    weights = torch.as_tensor(channel_weights, dtype=x.dtype, device=x.device)
+    if weights.ndim != 1:
+        raise ValueError(f"recon_loss_channel_weights must be 1D, got shape={tuple(weights.shape)}")
+    if weights.numel() != int(x.shape[1]):
+        raise ValueError(
+            f"recon_loss_channel_weights length {weights.numel()} does not match input channels {int(x.shape[1])}"
+        )
+    if not bool(torch.isfinite(weights).all()):
+        raise ValueError("recon_loss_channel_weights must be finite")
+    if bool((weights < 0).any()):
+        raise ValueError("recon_loss_channel_weights must be non-negative")
+    weight_sum = weights.sum()
+    if not torch.isclose(weight_sum, weights.new_tensor(1.0), rtol=1e-5, atol=1e-6):
+        raise ValueError(f"recon_loss_channel_weights must sum to 1.0, got {float(weight_sum.detach().cpu())}")
+    return weights
+
+
+def vae_reconstruction_loss(
+    recon_x: torch.Tensor,
+    x: torch.Tensor,
+    mode: str = RECON_LOSS_MODE_CURRENT,
+    channel_weights: Optional[Sequence[float]] = None,
+) -> torch.Tensor:
     """Return reconstruction loss with explicit scale semantics.
 
     - mse_sum_batchmean_current: historical behavior, sum over all channels and
       pixels divided by batch size.
-    - offdiag_channelmean_sum: sum squared error over off-diagonal entries
-      within each channel, then average across channels and batch. For identical
-      per-channel errors this preserves the approximate single-channel scale and
-      avoids linear growth with channel count.
+    - offdiag_channelmean_sum / mse_offdiag_channel_mean_sum: sum squared error
+      over off-diagonal entries within each channel, then average across
+      channels and batch. For identical per-channel errors this preserves the
+      approximate single-channel scale and avoids linear growth with channel
+      count.
+    - mse_offdiag_channel_weighted_sum: same off-diagonal per-channel sums, but
+      weighted across channels using explicit non-negative weights that sum to
+      one.
     """
     if mode == RECON_LOSS_MODE_CURRENT:
         return nn.functional.mse_loss(recon_x, x, reduction='sum') / x.shape[0]
-    if mode == RECON_LOSS_MODE_OFFDIAG_CHANNELMEAN:
+    if mode in {RECON_LOSS_MODE_OFFDIAG_CHANNELMEAN, RECON_LOSS_MODE_MSE_OFFDIAG_CHANNEL_MEAN_SUM}:
         offdiag_mask = _offdiag_mask_for_tensor(x)
         diff2 = (recon_x - x).pow(2)
         per_subject_channel_sum = diff2[:, :, offdiag_mask].sum(dim=-1)
         return per_subject_channel_sum.mean(dim=1).mean()
+    if mode == RECON_LOSS_MODE_MSE_OFFDIAG_CHANNEL_WEIGHTED_SUM:
+        offdiag_mask = _offdiag_mask_for_tensor(x)
+        diff2 = (recon_x - x).pow(2)
+        per_subject_channel_sum = diff2[:, :, offdiag_mask].sum(dim=-1)
+        weights = _channel_weights_for_tensor(channel_weights, x)
+        return (per_subject_channel_sum * weights.view(1, -1)).sum(dim=1).mean()
     raise ValueError(f"Unknown recon_loss_mode={mode!r}. Valid modes: {RECON_LOSS_MODES}")
 
 
-def describe_recon_loss_mode(mode: str, n_channels: int, n_rois: int) -> str:
+def latent_covariate_corr_penalty(mu: torch.Tensor, condition: Optional[torch.Tensor]) -> torch.Tensor:
+    """Mean squared correlation between latent dimensions and conditioning variables.
+
+    The penalty is differentiable w.r.t. ``mu``. It is intentionally batch-local
+    and defaults to zero when conditioning is absent, preserving historical loss
+    behavior when lambda is 0.
+    """
+    if condition is None or condition.numel() == 0 or mu.shape[0] < 2:
+        return mu.new_tensor(0.0)
+    cond = condition.to(device=mu.device, dtype=mu.dtype)
+    if cond.ndim != 2:
+        raise ValueError(f"condition must be 2D [B,C], got shape={tuple(cond.shape)}")
+    mu_centered = mu - mu.mean(dim=0, keepdim=True)
+    cond_centered = cond - cond.mean(dim=0, keepdim=True)
+    mu_std = mu_centered.pow(2).mean(dim=0, keepdim=True).sqrt().clamp_min(1e-6)
+    cond_std = cond_centered.pow(2).mean(dim=0, keepdim=True).sqrt().clamp_min(1e-6)
+    mu_z = mu_centered / mu_std
+    cond_z = cond_centered / cond_std
+    corr = torch.matmul(mu_z.transpose(0, 1), cond_z) / float(mu.shape[0])
+    return corr.pow(2).mean()
+
+
+def describe_recon_loss_mode(
+    mode: str,
+    n_channels: int,
+    n_rois: int,
+    channel_weights: Optional[Sequence[float]] = None,
+) -> str:
     offdiag_elements = int(n_rois * (n_rois - 1))
     all_elements = int(n_channels * n_rois * n_rois)
     if mode == RECON_LOSS_MODE_CURRENT:
@@ -267,24 +467,46 @@ def describe_recon_loss_mode(mode: str, n_channels: int, n_rois: int) -> str:
             f"{mode}: sum over all channels and pixels / batch; "
             f"scale_terms_per_subject={all_elements}"
         )
-    if mode == RECON_LOSS_MODE_OFFDIAG_CHANNELMEAN:
+    if mode in {RECON_LOSS_MODE_OFFDIAG_CHANNELMEAN, RECON_LOSS_MODE_MSE_OFFDIAG_CHANNEL_MEAN_SUM}:
         return (
             f"{mode}: off-diagonal squared-error sum per channel, mean across channels and batch; "
+            f"offdiag_elements_per_channel={offdiag_elements}, scale_terms_per_subject~={offdiag_elements}"
+        )
+    if mode == RECON_LOSS_MODE_MSE_OFFDIAG_CHANNEL_WEIGHTED_SUM:
+        return (
+            f"{mode}: off-diagonal squared-error sum per channel, weighted across channels and mean over batch; "
+            f"weights={list(channel_weights) if channel_weights is not None else None}, "
             f"offdiag_elements_per_channel={offdiag_elements}, scale_terms_per_subject~={offdiag_elements}"
         )
     return f"{mode}: unknown scale"
 
 
-def vae_loss_function(recon_x, x, mu, logvar, beta=1.0, recon_loss_mode: str = RECON_LOSS_MODE_CURRENT):
+def vae_loss_function(
+    recon_x,
+    x,
+    mu,
+    logvar,
+    beta=1.0,
+    recon_loss_mode: str = RECON_LOSS_MODE_CURRENT,
+    recon_loss_channel_weights: Optional[Sequence[float]] = None,
+    condition: Optional[torch.Tensor] = None,
+    latent_covariate_corr_lambda: float = 0.0,
+):
     recon_x = recon_x.float()
     x       = x.float()
     mu      = mu.float()
     logvar  = logvar.float()
 
-    recon_loss = vae_reconstruction_loss(recon_x, x, mode=recon_loss_mode)
+    recon_loss = vae_reconstruction_loss(
+        recon_x,
+        x,
+        mode=recon_loss_mode,
+        channel_weights=recon_loss_channel_weights,
+    )
     kld_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1).mean()
-    total_loss = recon_loss + beta * kld_loss
-    return total_loss, recon_loss.detach(), kld_loss.detach()
+    corr_penalty = latent_covariate_corr_penalty(mu, condition)
+    total_loss = recon_loss + beta * kld_loss + float(latent_covariate_corr_lambda or 0.0) * corr_penalty
+    return total_loss, recon_loss.detach(), kld_loss.detach(), corr_penalty.detach()
 
 
 def apply_channel_dropout_train(x: torch.Tensor, p: float) -> torch.Tensor:
@@ -349,6 +571,350 @@ def make_vae_weighted_sampler(
     return sampler, summary
 
 
+def apply_vae_pool_composition_strategy(
+    vae_pool_df: pd.DataFrame,
+    strategy: str,
+    seed: int,
+    fold_number: int,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Select a fold-local VAE pool composition.
+
+    The default/current strategy returns the pool unchanged. Non-current
+    strategies are exploratory because they use diagnosis labels to choose
+    unsupervised VAE training subjects. Selection only sees the already
+    fold-local VAE candidate pool, so outer classifier test subjects remain
+    excluded.
+    """
+    strategy = str(strategy or VAE_POOL_CURRENT_ALL)
+    if strategy not in VAE_POOL_COMPOSITION_STRATEGIES:
+        raise ValueError(f"Unknown VAE pool composition strategy: {strategy}")
+    if "ResearchGroup_Mapped" not in vae_pool_df.columns:
+        raise ValueError("Cannot apply VAE pool composition strategy without ResearchGroup_Mapped")
+
+    original = vae_pool_df.copy()
+    original["_orig_order"] = np.arange(len(original), dtype=int)
+    rng_seed = int(seed) + int(fold_number) * 1009
+    groups = original["ResearchGroup_Mapped"].fillna("UNKNOWN").astype(str)
+
+    if strategy == VAE_POOL_CURRENT_ALL:
+        selected = original.copy()
+        selection_note = "unchanged_current_pool"
+    elif strategy == VAE_POOL_CN_AD_ONLY:
+        selected = original[groups.isin(["CN", "AD"])].copy()
+        selection_note = "kept_cn_ad_only_removed_mci"
+    elif strategy == VAE_POOL_BALANCED_CN_AD_MCI:
+        counts = groups[groups.isin(["CN", "AD", "MCI"])].value_counts()
+        missing = [g for g in ["CN", "AD", "MCI"] if counts.get(g, 0) <= 0]
+        if missing:
+            raise ValueError(f"Cannot balance CN/AD/MCI VAE pool; missing groups: {missing}")
+        target_n = int(counts[["CN", "AD", "MCI"]].min())
+        parts = []
+        for group in ["CN", "AD", "MCI"]:
+            part = original[groups.eq(group)].sample(n=target_n, replace=False, random_state=rng_seed + len(parts))
+            parts.append(part)
+        selected = pd.concat(parts, ignore_index=False)
+        selection_note = f"sampled_equal_cn_ad_mci_n_{target_n}"
+    elif strategy == VAE_POOL_CN_AD_PLUS_MATCHED_MCI:
+        cn_ad = original[groups.isin(["CN", "AD"])].copy()
+        ad_n = int(groups.eq("AD").sum())
+        mci = original[groups.eq("MCI")].copy()
+        if ad_n <= 0:
+            raise ValueError("Cannot sample MCI matched to AD count; no AD subjects in VAE pool")
+        if len(mci) <= 0:
+            raise ValueError("Cannot sample MCI matched to AD count; no MCI subjects in VAE pool")
+        mci_n = min(ad_n, int(len(mci)))
+        selected = pd.concat(
+            [cn_ad, mci.sample(n=mci_n, replace=False, random_state=rng_seed)],
+            ignore_index=False,
+        )
+        selection_note = f"kept_all_cn_ad_sampled_mci_n_{mci_n}_target_ad_n_{ad_n}"
+    else:  # pragma: no cover - guarded above
+        raise ValueError(strategy)
+
+    selected = selected.sort_values("_orig_order").drop(columns=["_orig_order"]).reset_index(drop=True)
+    before_counts = groups.value_counts(dropna=False).to_dict()
+    after_counts = selected["ResearchGroup_Mapped"].fillna("UNKNOWN").astype(str).value_counts(dropna=False).to_dict()
+    summary = pd.DataFrame(
+        [
+            {
+                "fold": int(fold_number),
+                "vae_pool_composition_strategy": strategy,
+                "exploratory_uses_diagnosis_for_pool_composition": strategy != VAE_POOL_CURRENT_ALL,
+                "n_before": int(len(original)),
+                "n_after": int(len(selected)),
+                "n_removed": int(len(original) - len(selected)),
+                "counts_before": json.dumps({str(k): int(v) for k, v in before_counts.items()}, sort_keys=True),
+                "counts_after": json.dumps({str(k): int(v) for k, v in after_counts.items()}, sort_keys=True),
+                "selection_note": selection_note,
+            }
+        ]
+    )
+    return selected, summary
+
+
+def conditioning_dim_from_args(args: argparse.Namespace) -> int:
+    if str(getattr(args, "vae_conditioning_mode", "none")) == "none":
+        return 0
+    vars_mode = str(getattr(args, "vae_conditioning_vars", "none"))
+    vars_mode_norm = "age" if vars_mode.lower() == "age" else vars_mode
+    if vars_mode_norm in {"age", "sex"}:
+        return 1
+    if vars_mode_norm == "age_sex":
+        return 2
+    if vars_mode_norm == "manufacturer":
+        return 3
+    return 0
+
+
+_CONDITIONING_MISSING_STRINGS = {"", "nan", "na", "n/a", "none", "null", "<na>", "missing"}
+_SEX_NORMALIZE_MAP = {
+    "f": "F",
+    "female": "F",
+    "0": "F",
+    "0.0": "F",
+    "m": "M",
+    "male": "M",
+    "1": "M",
+    "1.0": "M",
+}
+_SEX_TO_FLOAT = {"M": 0.0, "F": 1.0}
+_MANUFACTURER_NORMALIZE_MAP = {
+    "ge": "GE",
+    "g e": "GE",
+    "general electric": "GE",
+    "ge medical systems": "GE",
+    "philips": "PHILIPS",
+    "philips medical systems": "PHILIPS",
+    "philips healthcare": "PHILIPS",
+    "siemens": "SIEMENS",
+    "siemens healthcare": "SIEMENS",
+    "siemens healthineers": "SIEMENS",
+    "siemens medical systems": "SIEMENS",
+}
+
+
+def _conditioning_missing_like(series: pd.Series) -> pd.Series:
+    """Return a boolean mask for explicit missing-like covariate values."""
+    raw = series.copy()
+    text = raw.astype("string").str.strip().str.lower()
+    return raw.isna() | text.isna() | text.isin(_CONDITIONING_MISSING_STRINGS)
+
+
+def _normalize_conditioning_sex(series: pd.Series) -> pd.Series:
+    """Normalize Sex to F/M while preserving missing-like values as NA."""
+    missing = _conditioning_missing_like(series)
+    normalized = pd.Series(pd.NA, index=series.index, dtype="object")
+    text = series.astype("string").str.strip().str.lower()
+    mapped = text.map(_SEX_NORMALIZE_MAP)
+    normalized.loc[~missing] = mapped.loc[~missing]
+    unsupported = normalized.isna() & ~missing
+    if unsupported.any():
+        examples = series.loc[unsupported].astype(str).drop_duplicates().head(10).tolist()
+        raise ValueError(f"VAE conditioning Sex has unsupported non-missing values: {examples}")
+    return normalized
+
+
+def _normalize_conditioning_manufacturer(series: pd.Series) -> pd.Series:
+    """Normalize scanner Manufacturer to canonical GE/PHILIPS/SIEMENS labels.
+
+    Missing-like values are returned as NA. Unknown non-missing values fail
+    clearly because the current experiment intentionally does not define an
+    explicit unknown category.
+    """
+    missing = _conditioning_missing_like(series)
+    normalized = pd.Series(pd.NA, index=series.index, dtype="object")
+    text = (
+        series.astype("string")
+        .str.strip()
+        .str.replace(r"[_\\-]+", " ", regex=True)
+        .str.replace(r"\\s+", " ", regex=True)
+        .str.lower()
+    )
+    mapped = text.map(_MANUFACTURER_NORMALIZE_MAP)
+    normalized.loc[~missing] = mapped.loc[~missing]
+    unsupported = normalized.isna() & ~missing
+    if unsupported.any():
+        examples = series.loc[unsupported].astype(str).drop_duplicates().head(10).tolist()
+        raise ValueError(f"VAE conditioning Manufacturer has unsupported non-missing values: {examples}")
+    return normalized
+
+
+def _numeric_conditioning_age(series: pd.Series) -> Tuple[pd.Series, pd.Series]:
+    """Convert Age to numeric and return (age, missing_mask), failing on invalid non-missing values."""
+    missing = _conditioning_missing_like(series)
+    numeric = pd.to_numeric(series, errors="coerce")
+    invalid_non_missing = numeric.isna() & ~missing
+    if invalid_non_missing.any():
+        examples = series.loc[invalid_non_missing].astype(str).drop_duplicates().head(10).tolist()
+        raise ValueError(f"VAE conditioning Age has non-numeric non-missing values: {examples}")
+    return numeric.astype(float), missing | numeric.isna()
+
+
+def fit_vae_conditioning_transformer(train_rows: pd.DataFrame, vars_mode: str) -> Dict[str, Any]:
+    """Fit fold-local conditioning transform on VAE train rows only."""
+    vars_mode = str(vars_mode or "none")
+    if vars_mode.lower() == "age":
+        vars_mode = "age"
+    if vars_mode == "none":
+        return {"vars_mode": "none", "columns": [], "conditioning_dim": 0}
+    if vars_mode == "age":
+        required = ["Age"]
+    elif vars_mode == "sex":
+        required = ["Sex"]
+    elif vars_mode == "age_sex":
+        required = ["Age", "Sex"]
+    elif vars_mode == "manufacturer":
+        required = ["Manufacturer"]
+    else:
+        raise ValueError(f"Unsupported VAE conditioning vars_mode={vars_mode!r}")
+    missing_cols = [col for col in required if col not in train_rows.columns]
+    if missing_cols:
+        raise ValueError(f"VAE conditioning requires missing metadata columns: {missing_cols}")
+    transformer: Dict[str, Any] = {
+        "vars_mode": vars_mode,
+        "columns": required,
+        "conditioning_dim": len(required),
+        "sex_mapping": dict(_SEX_TO_FLOAT),
+        "fit_scope": "vae_actual_train_only",
+    }
+    if "Age" in required:
+        age, age_missing = _numeric_conditioning_age(train_rows["Age"])
+        valid_age = age.loc[~age_missing].dropna()
+        if valid_age.empty:
+            raise ValueError("VAE conditioning Age has no valid train values for fold-local imputation.")
+        age_impute = float(valid_age.median())
+        age_imputed = age.mask(age_missing, age_impute)
+        std = float(age_imputed.std(ddof=0))
+        if not np.isfinite(std) or std <= 0.0:
+            raise ValueError("VAE conditioning Age std is zero/non-finite in training fold.")
+        transformer["age_impute_value"] = age_impute
+        transformer["age_missing_train"] = int(age_missing.sum())
+        transformer["age_mean"] = float(age_imputed.mean())
+        transformer["age_std"] = std
+    if "Sex" in required:
+        sex = _normalize_conditioning_sex(train_rows["Sex"])
+        sex_missing = sex.isna()
+        sex_nonmissing = sex.loc[~sex_missing]
+        if sex_nonmissing.empty:
+            raise ValueError("VAE conditioning Sex has no valid train values for fold-local imputation.")
+        sex_mode = str(sex_nonmissing.mode(dropna=True).iloc[0])
+        transformer["sex_impute_value"] = sex_mode
+        transformer["sex_missing_train"] = int(sex_missing.sum())
+        transformer["sex_counts_train"] = {str(k): int(v) for k, v in sex_nonmissing.value_counts(dropna=False).to_dict().items()}
+    if "Manufacturer" in required:
+        manufacturer = _normalize_conditioning_manufacturer(train_rows["Manufacturer"])
+        manufacturer_missing = manufacturer.isna()
+        if manufacturer_missing.any():
+            examples = train_rows.loc[manufacturer_missing, ["SubjectID", "Manufacturer"]].head(10).to_dict("records")
+            raise ValueError(
+                "VAE conditioning Manufacturer has missing train values and no unknown category is enabled: "
+                f"{examples}"
+            )
+        categories = sorted(manufacturer.dropna().unique().tolist())
+        if not categories:
+            raise ValueError("VAE conditioning Manufacturer has no valid train categories.")
+        transformer["manufacturer_categories"] = categories
+        transformer["manufacturer_missing_train"] = int(manufacturer_missing.sum())
+        transformer["manufacturer_counts_train"] = {
+            str(k): int(v) for k, v in manufacturer.value_counts(dropna=False).to_dict().items()
+        }
+        transformer["manufacturer_mapping"] = {str(cat): int(i) for i, cat in enumerate(categories)}
+        transformer["conditioning_dim"] = len(categories)
+    return transformer
+
+
+def transform_vae_conditioning_covariates(rows: pd.DataFrame, transformer: Dict[str, Any]) -> np.ndarray:
+    """Apply fold-local VAE conditioning preprocessing to any split."""
+    vars_mode = str(transformer.get("vars_mode", "none"))
+    if vars_mode == "none":
+        return np.zeros((len(rows), 0), dtype=np.float32)
+    cols: List[np.ndarray] = []
+    if str(vars_mode).lower() == "age":
+        vars_mode = "age"
+    if vars_mode in {"age", "age_sex"}:
+        age, age_missing = _numeric_conditioning_age(rows["Age"])
+        age = age.mask(age_missing, float(transformer["age_impute_value"]))
+        cols.append(((age.astype(float) - float(transformer["age_mean"])) / float(transformer["age_std"])).to_numpy(dtype=np.float32))
+    if vars_mode in {"sex", "age_sex"}:
+        sex = _normalize_conditioning_sex(rows["Sex"]).fillna(str(transformer["sex_impute_value"]))
+        encoded = sex.map(dict(transformer["sex_mapping"]))
+        if encoded.isna().any():
+            bad = rows.loc[encoded.isna(), ["SubjectID", "Sex"]].head(5).to_dict("records")
+            raise ValueError(f"VAE conditioning Sex has unsupported/missing values: {bad}")
+        cols.append(encoded.to_numpy(dtype=np.float32))
+    if vars_mode == "manufacturer":
+        manufacturer = _normalize_conditioning_manufacturer(rows["Manufacturer"])
+        missing = manufacturer.isna()
+        categories = list(transformer.get("manufacturer_categories", []))
+        mapping = dict(transformer.get("manufacturer_mapping", {}))
+        unseen = ~manufacturer.isin(categories)
+        bad_mask = missing | unseen
+        if bad_mask.any():
+            bad = rows.loc[bad_mask, ["SubjectID", "Manufacturer"]].head(10).to_dict("records")
+            raise ValueError(
+                "VAE conditioning Manufacturer has missing/unseen values for fold-local categories "
+                f"{categories}: {bad}"
+            )
+        onehot = np.zeros((len(rows), len(categories)), dtype=np.float32)
+        codes = manufacturer.map(mapping).to_numpy(dtype=int)
+        onehot[np.arange(len(rows)), codes] = 1.0
+        cols.append(onehot)
+    cols_2d = [c[:, None] if c.ndim == 1 else c for c in cols]
+    return np.concatenate(cols_2d, axis=1).astype(np.float32)
+
+
+def apply_vae_conditioning_transformer(rows: pd.DataFrame, transformer: Dict[str, Any]) -> np.ndarray:
+    """Backward-compatible alias for the fold-safe conditioning transform."""
+    return transform_vae_conditioning_covariates(rows, transformer)
+
+
+def summarize_vae_conditioning_qc(
+    train_rows: pd.DataFrame,
+    val_rows: pd.DataFrame,
+    test_rows: pd.DataFrame,
+    transformer: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Summarize fold-local imputation and missingness without fitting on val/test."""
+    def sex_missing_count(rows: pd.DataFrame) -> int:
+        return int(_normalize_conditioning_sex(rows["Sex"]).isna().sum()) if "Sex" in rows.columns else np.nan
+
+    def age_missing_count(rows: pd.DataFrame) -> int:
+        if "Age" not in rows.columns:
+            return np.nan
+        _, missing = _numeric_conditioning_age(rows["Age"])
+        return int(missing.sum())
+
+    def manufacturer_missing_count(rows: pd.DataFrame) -> int:
+        return int(_normalize_conditioning_manufacturer(rows["Manufacturer"]).isna().sum()) if "Manufacturer" in rows.columns else np.nan
+
+    def manufacturer_counts(rows: pd.DataFrame) -> Dict[str, int]:
+        if "Manufacturer" not in rows.columns:
+            return {}
+        vals = _normalize_conditioning_manufacturer(rows["Manufacturer"])
+        return {str(k): int(v) for k, v in vals.value_counts(dropna=False).to_dict().items()}
+
+    return {
+        "conditioning_vars": transformer.get("vars_mode", "none"),
+        "sex_missing_train": sex_missing_count(train_rows),
+        "sex_missing_val": sex_missing_count(val_rows),
+        "sex_missing_test": sex_missing_count(test_rows),
+        "sex_impute_value": transformer.get("sex_impute_value"),
+        "age_missing_train": age_missing_count(train_rows),
+        "age_missing_val": age_missing_count(val_rows),
+        "age_missing_test": age_missing_count(test_rows),
+        "age_impute_value": transformer.get("age_impute_value"),
+        "age_mean_train": transformer.get("age_mean"),
+        "age_std_train": transformer.get("age_std"),
+        "manufacturer_missing_train": manufacturer_missing_count(train_rows),
+        "manufacturer_missing_val": manufacturer_missing_count(val_rows),
+        "manufacturer_missing_test": manufacturer_missing_count(test_rows),
+        "manufacturer_categories": json.dumps(transformer.get("manufacturer_categories", [])),
+        "manufacturer_counts_train": json.dumps(transformer.get("manufacturer_counts_train", {}), sort_keys=True),
+        "manufacturer_counts_val": json.dumps(manufacturer_counts(val_rows), sort_keys=True),
+        "manufacturer_counts_test": json.dumps(manufacturer_counts(test_rows), sort_keys=True),
+    }
+
+
 def get_cyclical_beta_schedule(current_epoch: int, total_epochs: int, beta_max: float, n_cycles: int, ratio_increase: float = 0.5) -> float:
     if n_cycles <= 0: return beta_max
     epoch_per_cycle = total_epochs / n_cycles
@@ -394,6 +960,7 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
     else:
         # Lógica original si no se especifica `channels_to_use`
         current_global_tensor = global_tensor_all_channels
+        selected_channel_indices = list(range(int(current_global_tensor.shape[1])))
         master_channel_list = getattr(args, 'all_original_channel_names', DEFAULT_CHANNEL_NAMES)
         master_channel_list = _extend_channel_names_to_tensor(
             int(current_global_tensor.shape[1]),
@@ -421,6 +988,49 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
     if len(cn_ad_df) < original_cn_ad_count:
         logger.warning(f"Algunos sujetos CN/AD filtrados porque 'tensor_idx' excede las dimensiones del tensor. "
                        f"Original: {original_cn_ad_count}, Post-filtro: {len(cn_ad_df)}")
+
+    classifier_exclude_subject_ids = [
+        str(s).strip()
+        for s in (getattr(args, "classifier_exclude_subject_ids", None) or [])
+        if str(s).strip()
+    ]
+    if classifier_exclude_subject_ids:
+        exclude_set = set(classifier_exclude_subject_ids)
+        _sid_series = cn_ad_df["SubjectID"].astype(str)
+        _exclude_mask = _sid_series.isin(exclude_set)
+        excluded_from_classifier_df = cn_ad_df.loc[_exclude_mask].copy()
+        missing_exclude_ids = sorted(exclude_set.difference(set(_sid_series.tolist())))
+        cn_ad_df = cn_ad_df.loc[~_exclude_mask].copy()
+        audit_rows = []
+        for _sid in sorted(exclude_set):
+            _rows = excluded_from_classifier_df[excluded_from_classifier_df["SubjectID"].astype(str).eq(_sid)]
+            if _rows.empty:
+                audit_rows.append({
+                    "SubjectID": _sid,
+                    "action": "not_present_in_classifier_pool",
+                    "ResearchGroup_Mapped": "",
+                    "tensor_idx": "",
+                })
+            else:
+                for _, _row in _rows.iterrows():
+                    audit_rows.append({
+                        "SubjectID": _sid,
+                        "action": "excluded_from_classifier_pool_only",
+                        "ResearchGroup_Mapped": str(_row.get("ResearchGroup_Mapped", "")),
+                        "tensor_idx": _row.get("tensor_idx", ""),
+                    })
+        if audit_rows:
+            _audit_path = Path(args.output_dir) / "classifier_excluded_subjects.csv"
+            _audit_path.parent.mkdir(parents=True, exist_ok=True)
+            pd.DataFrame(audit_rows).to_csv(_audit_path, index=False)
+        logger.warning(
+            "classifier_exclude_subject_ids activo: %d sujetos removidos sólo del pool supervisado AD/CN; "
+            "ids solicitados=%s; ids no presentes=%s; pool restante=%d.",
+            int(_exclude_mask.sum()),
+            classifier_exclude_subject_ids,
+            missing_exclude_ids,
+            len(cn_ad_df),
+        )
 
     if cn_ad_df.empty:
         logger.error("No hay sujetos CN/AD válidos después de filtrar por tensor_idx. Abortando.")
@@ -552,65 +1162,368 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
         )    
         cols_pool_log = _filter_existing_cols(vae_train_pool_df, ['ResearchGroup_Mapped', 'Sex', 'Age_Group'])
         log_group_distributions(vae_train_pool_df, cols_pool_log, "Pool Entrenamiento VAE", fold_idx_str)
-            
+
+        # --- vae_required_metadata_cols: optional fold-safe VAE pool filter ---
+        _req_meta = getattr(args, "vae_required_metadata_cols", None) or []
+        _req_meta = [c for c in _req_meta if c]
+        if _req_meta:
+            _missing_any = pd.Series(False, index=vae_train_pool_df.index)
+            for _col in _req_meta:
+                if _col in vae_train_pool_df.columns:
+                    _missing_any |= (
+                        vae_train_pool_df[_col].isna()
+                        | vae_train_pool_df[_col].astype(str).str.strip().isin(["", "nan", "NaN", "None", "none", "NA", "N/A"])
+                    )
+                else:
+                    logger.warning(f"  {fold_idx_str} vae_required_metadata_cols: column {_col!r} not found in metadata; skipping.")
+            if _missing_any.any():
+                _removed = vae_train_pool_df[_missing_any].copy()
+                _n_before = len(vae_train_pool_df)
+                # distribution before filter
+                _dist_before = {
+                    _c: vae_train_pool_df[_c].value_counts(dropna=False).to_dict()
+                    for _c in ["ResearchGroup_Mapped", "Manufacturer"] if _c in vae_train_pool_df.columns
+                }
+                vae_train_pool_df = vae_train_pool_df[~_missing_any].reset_index(drop=True)
+                global_indices_vae_training_pool = vae_train_pool_df["tensor_idx"].to_numpy(dtype=int)
+                _n_after = len(vae_train_pool_df)
+                _dist_after = {
+                    _c: vae_train_pool_df[_c].value_counts(dropna=False).to_dict()
+                    for _c in ["ResearchGroup_Mapped", "Manufacturer"] if _c in vae_train_pool_df.columns
+                }
+                # Per-subject QC rows
+                _qc_rows = []
+                for _, _r in _removed.iterrows():
+                    _missing_cols_for_subject = [
+                        _c for _c in _req_meta
+                        if _c in _r.index and (
+                            pd.isna(_r[_c])
+                            or str(_r[_c]).strip() in ["", "nan", "NaN", "None", "none", "NA", "N/A"]
+                        )
+                    ]
+                    _sid = str(_r.get("SubjectID", "?"))
+                    _in_clf = bool(_sid in cn_ad_df["SubjectID"].values) if "SubjectID" in cn_ad_df.columns else None
+                    _qc_rows.append({
+                        "fold": fold_idx + 1,
+                        "SubjectID": _sid,
+                        "missing_cols": "|".join(_missing_cols_for_subject),
+                        "ResearchGroup_Mapped": str(_r.get("ResearchGroup_Mapped", "")),
+                        "in_classifier_pool": _in_clf,
+                    })
+                if _qc_rows:
+                    _qc_df = pd.DataFrame(_qc_rows)
+                    _qc_path = fold_output_dir / f"vae_pool_required_metadata_removed_fold_{fold_idx+1}.csv"
+                    _qc_df.to_csv(_qc_path, index=False)
+                _filter_summary = {
+                    "fold": fold_idx + 1,
+                    "required_cols": _req_meta,
+                    "n_vae_pool_before_filter": _n_before,
+                    "n_removed": _n_before - _n_after,
+                    "n_vae_pool_after_filter": _n_after,
+                    "distribution_before": {str(k): {str(kk): int(vv) for kk, vv in v.items()} for k, v in _dist_before.items()},
+                    "distribution_after": {str(k): {str(kk): int(vv) for kk, vv in v.items()} for k, v in _dist_after.items()},
+                }
+                _summary_path = fold_output_dir / f"vae_pool_required_metadata_filter_summary_fold_{fold_idx+1}.json"
+                with open(_summary_path, "w", encoding="utf-8") as _fj:
+                    json.dump(_filter_summary, _fj, indent=2)
+                logger.warning(
+                    f"  {fold_idx_str} VAE pool filtered for required metadata {_req_meta}: "
+                    f"{_n_before - _n_after} subjects removed, {_n_after} remaining."
+                )
+            else:
+                logger.info(
+                    f"  {fold_idx_str} vae_required_metadata_cols {_req_meta}: "
+                    f"all {len(vae_train_pool_df)} VAE pool subjects have required metadata present."
+                )
+        # --- end vae_required_metadata_cols ---
+
+        _pool_strategy = str(getattr(args, "vae_pool_composition_strategy", VAE_POOL_CURRENT_ALL) or VAE_POOL_CURRENT_ALL)
+        if _pool_strategy != VAE_POOL_CURRENT_ALL:
+            _n_before_pool_strategy = len(vae_train_pool_df)
+            vae_train_pool_df, _pool_strategy_summary = apply_vae_pool_composition_strategy(
+                vae_train_pool_df,
+                strategy=_pool_strategy,
+                seed=args.seed,
+                fold_number=fold_idx + 1,
+            )
+            global_indices_vae_training_pool = vae_train_pool_df["tensor_idx"].to_numpy(dtype=int)
+            _pool_strategy_summary.to_csv(
+                fold_output_dir / f"vae_pool_composition_strategy_summary_fold_{fold_idx+1}.csv",
+                index=False,
+            )
+            logger.warning(
+                f"  {fold_idx_str} Exploratory VAE pool composition strategy {_pool_strategy!r}: "
+                f"{_n_before_pool_strategy} -> {len(vae_train_pool_df)} subjects. "
+                "This uses diagnosis labels for VAE pool composition and is not the historical default."
+            )
+            log_group_distributions(
+                vae_train_pool_df,
+                _filter_existing_cols(vae_train_pool_df, ["ResearchGroup_Mapped", "Manufacturer", "Sex", "Age_Group"]),
+                "Pool Entrenamiento VAE tras estrategia composicional",
+                fold_idx_str,
+            )
+
+        if len(global_indices_vae_training_pool) < 10:
+            logger.error(
+                f"{fold_idx_str}: Muy pocos sujetos ({len(global_indices_vae_training_pool)}) "
+                f"para entrenamiento VAE tras estrategia de composición. Saltando fold."
+            )
+            continue
+
         vae_train_pool_tensor_original_scale = current_global_tensor[global_indices_vae_training_pool]
+        harmonized_clf_train_dev_tensor_original_scale = None
+        harmonized_clf_test_tensor_original_scale = None
+        input_harmonization_mode = str(getattr(args, "input_harmonization_mode", "none") or "none")
+        if input_harmonization_mode != "none":
+            if input_harmonization_mode != "foldwise_combat":
+                raise RuntimeError(f"Unsupported input_harmonization_mode={input_harmonization_mode!r}")
+            if fit_tensor_combat_channelwise is None or transform_tensor_combat_channelwise is None:
+                raise RuntimeError(
+                    "input_harmonization_mode=foldwise_combat requested, but foldwise ComBat helper import failed."
+                )
+            if len(selected_channel_indices) != 3 or list(selected_channel_indices) != [1, 0, 2]:
+                raise RuntimeError(
+                    "Branch B foldwise ComBat is currently restricted to selected channels [1,0,2]; "
+                    f"got {list(selected_channel_indices)}"
+                )
+            batch_col = str(getattr(args, "input_harmonization_batch_col", "Manufacturer") or "Manufacturer")
+            covariates = list(getattr(args, "input_harmonization_covariates", None) or ["Age", "Sex"])
+            excluded_covariates = list(
+                getattr(args, "input_harmonization_excluded_covariates", None) or ["ResearchGroup_Mapped"]
+            )
+            if str(getattr(args, "input_harmonization_fit_scope", "outer_train_dev_only")) != "outer_train_dev_only":
+                raise RuntimeError("Foldwise ComBat only supports input_harmonization_fit_scope=outer_train_dev_only")
+            if str(getattr(args, "input_harmonization_vectorization", "upper_offdiag_by_channel")) != "upper_offdiag_by_channel":
+                raise RuntimeError("Foldwise ComBat only supports vectorization=upper_offdiag_by_channel")
+
+            clf_train_dev_df_for_harmonization = cn_ad_df.iloc[train_dev_clf_idx_in_cn_ad_df].copy()
+            clf_test_df_for_harmonization = cn_ad_df.iloc[test_clf_idx_in_cn_ad_df].copy()
+            guard_row = _validate_foldwise_input_harmonization_guards(
+                fit_df=vae_train_pool_df,
+                test_df=clf_test_df_for_harmonization,
+                batch_col=batch_col,
+                covariates=covariates,
+                excluded_covariates=excluded_covariates,
+                fold_number=fold_idx + 1,
+            )
+            _safe_json_dump(guard_row, fold_output_dir / "input_harmonization_leakage_guard.json")
+            pd.DataFrame([guard_row]).to_csv(fold_output_dir / "input_harmonization_leakage_guard.csv", index=False)
+            _write_foldwise_input_harmonization_subjects(
+                fold_output_dir,
+                fold=fold_idx + 1,
+                split_name="fit_train_dev_vae_pool",
+                df=vae_train_pool_df,
+            )
+            _write_foldwise_input_harmonization_subjects(
+                fold_output_dir,
+                fold=fold_idx + 1,
+                split_name="classifier_train_dev_apply",
+                df=clf_train_dev_df_for_harmonization,
+            )
+            _write_foldwise_input_harmonization_subjects(
+                fold_output_dir,
+                fold=fold_idx + 1,
+                split_name="classifier_test_apply",
+                df=clf_test_df_for_harmonization,
+            )
+
+            logger.info(
+                f"  {fold_idx_str} Input harmonization activo: foldwise_combat; "
+                f"fit_scope=outer_train_dev_only, batch={batch_col}, covariates={covariates}, "
+                f"excluded={excluded_covariates}, channels={selected_channel_indices}"
+            )
+            fitted_combat = fit_tensor_combat_channelwise(
+                vae_train_pool_tensor_original_scale,
+                vae_train_pool_df,
+                channel_indices=list(selected_channel_indices),
+                channel_names=selected_channel_names_in_tensor,
+            )
+            pd.DataFrame(fitted_combat.audit_rows).to_csv(
+                fold_output_dir / "input_harmonization_fit_audit.csv",
+                index=False,
+            )
+            pre_sep_fit = manufacturer_centroid_separability_proxy(
+                vae_train_pool_tensor_original_scale,
+                vae_train_pool_df,
+                channel_names=selected_channel_names_in_tensor,
+            ) if manufacturer_centroid_separability_proxy is not None else []
+
+            vae_train_pool_tensor_harmonized = transform_tensor_combat_channelwise(
+                fitted_combat,
+                vae_train_pool_tensor_original_scale,
+                vae_train_pool_df,
+                preserve_diagonal=True,
+            )
+            global_indices_clf_train_dev_for_harmonization = clf_train_dev_df_for_harmonization["tensor_idx"].to_numpy(dtype=int)
+            global_indices_clf_test_for_harmonization = clf_test_df_for_harmonization["tensor_idx"].to_numpy(dtype=int)
+            clf_train_dev_tensor_original = current_global_tensor[global_indices_clf_train_dev_for_harmonization]
+            clf_test_tensor_original = current_global_tensor[global_indices_clf_test_for_harmonization]
+            harmonized_clf_train_dev_tensor_original_scale = transform_tensor_combat_channelwise(
+                fitted_combat,
+                clf_train_dev_tensor_original,
+                clf_train_dev_df_for_harmonization,
+                preserve_diagonal=True,
+            )
+            harmonized_clf_test_tensor_original_scale = transform_tensor_combat_channelwise(
+                fitted_combat,
+                clf_test_tensor_original,
+                clf_test_df_for_harmonization,
+                preserve_diagonal=True,
+            )
+            post_sep_fit = manufacturer_centroid_separability_proxy(
+                vae_train_pool_tensor_harmonized,
+                vae_train_pool_df,
+                channel_names=selected_channel_names_in_tensor,
+            ) if manufacturer_centroid_separability_proxy is not None else []
+            sep_rows = []
+            pre_by_channel = {r["channel_position"]: r for r in pre_sep_fit}
+            post_by_channel = {r["channel_position"]: r for r in post_sep_fit}
+            for cpos in sorted(set(pre_by_channel) | set(post_by_channel)):
+                pre = pre_by_channel.get(cpos, {})
+                post = post_by_channel.get(cpos, {})
+                sep_rows.append({
+                    "fold": fold_idx + 1,
+                    "channel_position": int(cpos),
+                    "channel_name": pre.get("channel_name", post.get("channel_name", "")),
+                    "pre_mean_pairwise_centroid_distance_per_edge": pre.get("mean_pairwise_centroid_distance_per_edge", np.nan),
+                    "post_mean_pairwise_centroid_distance_per_edge": post.get("mean_pairwise_centroid_distance_per_edge", np.nan),
+                    "delta_mean_pairwise_centroid_distance_per_edge": (
+                        post.get("mean_pairwise_centroid_distance_per_edge", np.nan)
+                        - pre.get("mean_pairwise_centroid_distance_per_edge", np.nan)
+                    ),
+                })
+            pd.DataFrame(sep_rows).to_csv(
+                fold_output_dir / "input_harmonization_manufacturer_separability_proxy.csv",
+                index=False,
+            )
+            shift_rows = []
+            if combat_channel_shift_summary is not None:
+                for split_name, before_tensor, after_tensor in [
+                    ("vae_pool_fit_train_dev", vae_train_pool_tensor_original_scale, vae_train_pool_tensor_harmonized),
+                    ("classifier_train_dev_apply", clf_train_dev_tensor_original, harmonized_clf_train_dev_tensor_original_scale),
+                    ("classifier_test_apply", clf_test_tensor_original, harmonized_clf_test_tensor_original_scale),
+                ]:
+                    for row in combat_channel_shift_summary(
+                        before_tensor,
+                        after_tensor,
+                        split_name=split_name,
+                        channel_names=selected_channel_names_in_tensor,
+                    ):
+                        row["fold"] = fold_idx + 1
+                        shift_rows.append(row)
+            pd.DataFrame(shift_rows).to_csv(
+                fold_output_dir / "input_harmonization_channel_shift_summary.csv",
+                index=False,
+            )
+            diag_before = np.diagonal(vae_train_pool_tensor_original_scale, axis1=2, axis2=3)
+            diag_after = np.diagonal(vae_train_pool_tensor_harmonized, axis1=2, axis2=3)
+            symmetry_error = np.max(np.abs(vae_train_pool_tensor_harmonized - np.swapaxes(vae_train_pool_tensor_harmonized, 2, 3)))
+            integrity_row = {
+                "fold": fold_idx + 1,
+                "status": "PASS",
+                "fit_scope": "outer_train_dev_only",
+                "n_fit_subjects": int(len(vae_train_pool_df)),
+                "n_classifier_train_dev_apply": int(len(clf_train_dev_df_for_harmonization)),
+                "n_classifier_test_apply": int(len(clf_test_df_for_harmonization)),
+                "finite_fraction_vae_pool_post": float(np.isfinite(vae_train_pool_tensor_harmonized).mean()),
+                "max_abs_diagonal_delta_vae_pool": float(np.max(np.abs(diag_after - diag_before))),
+                "max_abs_symmetry_error_vae_pool": float(symmetry_error),
+                "diagnosis_used_in_harmonizer": False,
+                "test_distribution_used_in_fit": False,
+                "global_combat": False,
+            }
+            pd.DataFrame([integrity_row]).to_csv(
+                fold_output_dir / "input_harmonization_integrity.csv",
+                index=False,
+            )
+            if not np.isfinite(vae_train_pool_tensor_harmonized).all():
+                raise RuntimeError(f"{fold_idx_str} foldwise ComBat produced non-finite VAE pool values.")
+            if not np.isfinite(harmonized_clf_train_dev_tensor_original_scale).all():
+                raise RuntimeError(f"{fold_idx_str} foldwise ComBat produced non-finite classifier train/dev values.")
+            if not np.isfinite(harmonized_clf_test_tensor_original_scale).all():
+                raise RuntimeError(f"{fold_idx_str} foldwise ComBat produced non-finite classifier test values.")
+            if float(integrity_row["max_abs_diagonal_delta_vae_pool"]) > 1e-10:
+                raise RuntimeError(f"{fold_idx_str} foldwise ComBat changed diagonal values.")
+            if float(integrity_row["max_abs_symmetry_error_vae_pool"]) > 1e-8:
+                raise RuntimeError(f"{fold_idx_str} foldwise ComBat broke symmetry.")
+            vae_train_pool_tensor_original_scale = vae_train_pool_tensor_harmonized
         
         # DEFAULT SEGURO:
         # - si vae_val_split_ratio == 0 -> train = todo el pool, val = vacío
-        # - si ratio > 0 -> intentamos split estratificado; si falla -> train = todo
+        # - si ratio > 0 -> intentamos split de validación con fallbacks explícitos
+        #   y registramos el modo real usado. Las corridas confirmatorias deben
+        #   pasar --vae_abort_if_val_split_fails para impedir train sin val interno.
         pool_n = int(len(global_indices_vae_training_pool))
         vae_actual_train_indices_local_to_pool = np.arange(pool_n, dtype=int)
         vae_internal_val_indices_local_to_pool = np.array([], dtype=int)
 
-        # columnas candidatas para balancear train/val del VAE
-        if args.vae_stratify_cols:
-            vae_strat_candidates = ['ResearchGroup_Mapped']
-            for col in args.vae_stratify_cols:
-                if col not in vae_strat_candidates:
-                    vae_strat_candidates.append(col)
-        else:
-            vae_strat_candidates = ['ResearchGroup_Mapped', 'Sex', 'Age_Group']
-        available_cols = [c for c in vae_strat_candidates if c in vae_train_pool_df.columns]
+        def _make_vae_split_stratify_key(candidate_cols):
+            available_cols = [c for c in candidate_cols if c in vae_train_pool_df.columns]
+            if len(available_cols) != len(candidate_cols):
+                missing_cols = sorted(set(candidate_cols) - set(available_cols))
+                return None, available_cols, f"missing columns: {missing_cols}"
+            if not available_cols:
+                return None, [], "unstratified"
 
-        if len(available_cols) == 0:
-            # fallback duro: al menos ResearchGroup_Mapped debería existir por construcción arriba,
-            # pero igual hagamos seguridad
-            available_cols = ['ResearchGroup_Mapped']
-
-        temp_vae_strat_df = vae_train_pool_df[available_cols].copy()
-
-        # imputamos NaNs y los casteamos a str
-        for col in available_cols:
-            temp_vae_strat_df[col] = temp_vae_strat_df[col].fillna(f"{col}_Unknown").astype(str)
-
-        try:
-            stratify_key_vae_split = temp_vae_strat_df.apply(lambda x: '_'.join(x.values.astype(str)), axis=1)
-
-            # ¿cada estrato tiene al menos 2 muestras? si no, bajamos a solo ResearchGroup_Mapped
-            if not all(stratify_key_vae_split.value_counts() >= 2):
-                logger.warning(f"  {fold_idx_str} Estratos muy chicos combinando {available_cols}. Uso solo 'ResearchGroup_Mapped'.")
-                stratify_key_vae_split = vae_train_pool_df['ResearchGroup_Mapped'].fillna("RG_Unknown").astype(str)
-
-            logger.info(f"  {fold_idx_str} VAE val split estratificado por columnas: {available_cols}")
-
-        except Exception as e:
-            logger.error(f"  {fold_idx_str} Error creando clave estratificación VAE ({e}). Uso solo 'ResearchGroup_Mapped'.")
-            stratify_key_vae_split = vae_train_pool_df['ResearchGroup_Mapped'].fillna("RG_Unknown").astype(str)
-
+            temp_vae_strat_df = vae_train_pool_df[available_cols].copy()
+            for col in available_cols:
+                temp_vae_strat_df[col] = temp_vae_strat_df[col].fillna(f"{col}_Unknown").astype(str)
+            stratify_key = temp_vae_strat_df.apply(lambda x: '_'.join(x.values.astype(str)), axis=1)
+            counts = stratify_key.value_counts(dropna=False)
+            min_count = int(counts.min()) if len(counts) else 0
+            if min_count < 2:
+                return None, available_cols, f"singleton strata present (min_count={min_count})"
+            return stratify_key, available_cols, "ok"
 
         if args.vae_val_split_ratio > 0 and len(global_indices_vae_training_pool) > 10:
-            try:
-                vae_actual_train_indices_local_to_pool, vae_internal_val_indices_local_to_pool = sk_train_test_split(
-                    np.arange(len(global_indices_vae_training_pool)),
-                    test_size=args.vae_val_split_ratio,
-                    stratify=stratify_key_vae_split, # Usamos la nueva clave de estratificación
-                    random_state=args.seed + fold_idx + 10, shuffle=True
-                )
-                vae_actual_train_indices_local_to_pool = np.asarray(vae_actual_train_indices_local_to_pool, dtype=int)
-                vae_internal_val_indices_local_to_pool = np.asarray(vae_internal_val_indices_local_to_pool, dtype=int)
+            vae_split_candidates = [
+                ("ResearchGroup_Mapped+Manufacturer", ["ResearchGroup_Mapped", "Manufacturer"]),
+                ("ResearchGroup_Mapped", ["ResearchGroup_Mapped"]),
+                ("Manufacturer", ["Manufacturer"]),
+                ("unstratified", []),
+            ]
+            split_errors = []
+            split_success = False
+            for split_mode, split_cols in vae_split_candidates:
+                stratify_key_vae_split = None
+                if split_cols:
+                    stratify_key_vae_split, available_cols, reason = _make_vae_split_stratify_key(split_cols)
+                    if stratify_key_vae_split is None:
+                        msg = f"{split_mode} skipped ({reason})"
+                        split_errors.append(msg)
+                        logger.warning(f"  {fold_idx_str} VAE val split fallback: {msg}.")
+                        continue
+                try:
+                    vae_actual_train_indices_local_to_pool, vae_internal_val_indices_local_to_pool = sk_train_test_split(
+                        np.arange(len(global_indices_vae_training_pool)),
+                        test_size=args.vae_val_split_ratio,
+                        stratify=stratify_key_vae_split,
+                        random_state=args.seed + fold_idx + 10, shuffle=True
+                    )
+                    vae_actual_train_indices_local_to_pool = np.asarray(vae_actual_train_indices_local_to_pool, dtype=int)
+                    vae_internal_val_indices_local_to_pool = np.asarray(vae_internal_val_indices_local_to_pool, dtype=int)
+                    logger.info(f"  {fold_idx_str} VAE val split mode used: {split_mode}")
+                    split_success = True
+                    break
+                except ValueError as e:
+                    msg = f"{split_mode} failed ({e})"
+                    split_errors.append(msg)
+                    logger.warning(f"  {fold_idx_str} VAE val split fallback: {msg}.")
 
-            except ValueError as e:
-                logger.error(f"  {fold_idx_str} Error al hacer el split de validación del VAE: {e}. Usando todo el pool como train.")
+            if not split_success:
+                if getattr(args, "vae_abort_if_val_split_fails", False):
+                    raise RuntimeError(
+                        f"{fold_idx_str} VAE internal validation split failed and "
+                        "--vae_abort_if_val_split_fails is set. "
+                        f"Attempts: {' | '.join(split_errors)}. "
+                        "Check for subjects with missing stratification metadata in the VAE pool "
+                        "(e.g. tensor subjects absent from metadata). "
+                        "Use --vae_required_metadata_cols to remove such subjects before splitting."
+                    )
+                logger.error(
+                    f"  {fold_idx_str} Error al hacer el split de validación del VAE. "
+                    f"Attempts: {' | '.join(split_errors)}. Usando todo el pool como train."
+                )
                 vae_actual_train_indices_local_to_pool = np.arange(len(global_indices_vae_training_pool), dtype=int)
                 vae_internal_val_indices_local_to_pool = np.array([], dtype=int)
 
@@ -635,7 +1548,53 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
         )
 
         joblib.dump(norm_params_fold_list, fold_output_dir / "vae_norm_params.joblib")
-        vae_train_dataset = TensorDataset(torch.from_numpy(vae_pool_tensor_norm[vae_actual_train_indices_local_to_pool]).float())
+        vae_conditioning_enabled = str(args.vae_conditioning_mode) != "none"
+        vae_conditioning_transformer = fit_vae_conditioning_transformer(
+            vae_train_pool_df.iloc[vae_actual_train_indices_local_to_pool].copy(),
+            str(args.vae_conditioning_vars) if vae_conditioning_enabled else "none",
+        )
+        joblib.dump(vae_conditioning_transformer, fold_output_dir / "vae_conditioning_transformer.joblib")
+        vae_pool_conditioning = apply_vae_conditioning_transformer(vae_train_pool_df, vae_conditioning_transformer)
+        vae_conditioning_dim = int(vae_pool_conditioning.shape[1])
+        if vae_conditioning_enabled:
+            conditioning_qc = summarize_vae_conditioning_qc(
+                train_rows=vae_train_pool_df.iloc[vae_actual_train_indices_local_to_pool].copy(),
+                val_rows=vae_train_pool_df.iloc[vae_internal_val_indices_local_to_pool].copy(),
+                test_rows=cn_ad_df.iloc[test_clf_idx_in_cn_ad_df].copy(),
+                transformer=vae_conditioning_transformer,
+            )
+            pd.DataFrame([{
+                "fold": fold_idx + 1,
+                "vae_conditioning_mode": args.vae_conditioning_mode,
+                "vae_conditioning_vars": args.vae_conditioning_vars,
+                "conditioning_dim": vae_conditioning_dim,
+                "age_mean_train": vae_conditioning_transformer.get("age_mean"),
+                "age_std_train": vae_conditioning_transformer.get("age_std"),
+                "age_impute_value": vae_conditioning_transformer.get("age_impute_value"),
+                "sex_impute_value": vae_conditioning_transformer.get("sex_impute_value"),
+                "sex_counts_train": json.dumps(vae_conditioning_transformer.get("sex_counts_train", {}), sort_keys=True),
+                "sex_mapping": json.dumps(vae_conditioning_transformer.get("sex_mapping", {}), sort_keys=True),
+                "manufacturer_categories": json.dumps(vae_conditioning_transformer.get("manufacturer_categories", [])),
+                "manufacturer_counts_train": json.dumps(vae_conditioning_transformer.get("manufacturer_counts_train", {}), sort_keys=True),
+                "fit_scope": "vae_actual_train_only",
+                **conditioning_qc,
+            }]).to_csv(fold_output_dir / "vae_conditioning_summary.csv", index=False)
+            pd.DataFrame([conditioning_qc]).to_csv(fold_output_dir / "vae_conditioning_missingness_qc.csv", index=False)
+            logger.info(
+                f"  {fold_idx_str} VAE conditioning activo: mode={args.vae_conditioning_mode}, "
+                f"vars={args.vae_conditioning_vars}, dim={vae_conditioning_dim}, "
+                f"corr_lambda={args.vae_latent_covariate_corr_lambda}, "
+                f"sex_impute={vae_conditioning_transformer.get('sex_impute_value')}, "
+                f"age_impute={vae_conditioning_transformer.get('age_impute_value')}, "
+                f"manufacturer_categories={vae_conditioning_transformer.get('manufacturer_categories')}"
+            )
+        if vae_conditioning_enabled:
+            vae_train_dataset = TensorDataset(
+                torch.from_numpy(vae_pool_tensor_norm[vae_actual_train_indices_local_to_pool]).float(),
+                torch.from_numpy(vae_pool_conditioning[vae_actual_train_indices_local_to_pool]).float(),
+            )
+        else:
+            vae_train_dataset = TensorDataset(torch.from_numpy(vae_pool_tensor_norm[vae_actual_train_indices_local_to_pool]).float())
         vae_sampler = None
         vae_shuffle = True
         if args.vae_train_sampler_strategy != VAE_TRAIN_SAMPLER_NONE:
@@ -666,7 +1625,13 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
         )
         vae_internal_val_loader = None
         if len(vae_internal_val_indices_local_to_pool) > 0:
-            vae_internal_val_dataset = TensorDataset(torch.from_numpy(vae_pool_tensor_norm[vae_internal_val_indices_local_to_pool]).float())
+            if vae_conditioning_enabled:
+                vae_internal_val_dataset = TensorDataset(
+                    torch.from_numpy(vae_pool_tensor_norm[vae_internal_val_indices_local_to_pool]).float(),
+                    torch.from_numpy(vae_pool_conditioning[vae_internal_val_indices_local_to_pool]).float(),
+                )
+            else:
+                vae_internal_val_dataset = TensorDataset(torch.from_numpy(vae_pool_tensor_norm[vae_internal_val_indices_local_to_pool]).float())
             vae_internal_val_loader = DataLoader(
                 vae_internal_val_dataset,
                 batch_size=args.batch_size,
@@ -680,22 +1645,66 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
         vae_fold_k = ConvolutionalVAE(
             input_channels=num_input_channels_for_vae, latent_dim=args.latent_dim, image_size=current_global_tensor.shape[-1],
             final_activation=args.vae_final_activation, intermediate_fc_dim_config=args.intermediate_fc_dim_vae,
-            dropout_rate=args.dropout_rate_vae, use_layernorm_fc=args.use_layernorm_vae_fc,
+            dropout_rate=args.dropout_rate_vae,
+            encoder_dropout_rate=args.encoder_dropout_rate_vae,
+            decoder_dropout_rate=args.decoder_dropout_rate_vae,
+            use_layernorm_fc=args.use_layernorm_vae_fc,
             num_conv_layers_encoder=args.num_conv_layers_encoder, decoder_type=args.decoder_type,
             encoder_norm_mode=args.vae_encoder_norm_mode,
             dropout_scope=args.vae_dropout_scope,
             block_order=args.vae_block_order,
+            conditioning_mode=args.vae_conditioning_mode,
+            conditioning_dim=vae_conditioning_dim,
         ).to(device)
+        dropout_manifest_rows = build_vae_dropout_manifest(vae_fold_k)
+        dropout_summary_rows = summarize_vae_dropout_manifest(
+            dropout_manifest_rows,
+            dropout_scope=args.vae_dropout_scope,
+            dropout_rate=args.dropout_rate_vae,
+            num_conv_layers_encoder=args.num_conv_layers_encoder,
+            has_intermediate_fc=bool(getattr(vae_fold_k, "intermediate_fc_dim", 0)),
+            encoder_dropout_rate=args.encoder_dropout_rate_vae,
+            decoder_dropout_rate=args.decoder_dropout_rate_vae,
+        )
+        dropout_manifest_path = fold_output_dir / "dropout_manifest.csv"
+        dropout_manifest_json_path = fold_output_dir / "dropout_manifest.json"
+        dropout_summary_path = fold_output_dir / "dropout_summary.csv"
+        pd.DataFrame(dropout_manifest_rows).to_csv(dropout_manifest_path, index=False)
+        pd.DataFrame(dropout_summary_rows).to_csv(dropout_summary_path, index=False)
+        with open(dropout_manifest_json_path, "w", encoding="utf-8") as f_dropout_manifest:
+            json.dump(
+                {
+                    "fold": fold_idx + 1,
+                    "dropout_rate_vae": args.dropout_rate_vae,
+                    "encoder_dropout_rate_vae": args.encoder_dropout_rate_vae,
+                    "decoder_dropout_rate_vae": args.decoder_dropout_rate_vae,
+                    "vae_dropout_scope": args.vae_dropout_scope,
+                    "manifest": dropout_manifest_rows,
+                    "summary": dropout_summary_rows,
+                },
+                f_dropout_manifest,
+                indent=2,
+            )
+        logger.info(
+            f"  {fold_idx_str} Dropout manifest guardado: "
+            f"{dropout_manifest_path}, {dropout_manifest_json_path}, {dropout_summary_path}"
+        )
         n_rois_for_loss = int(current_global_tensor.shape[-1])
         offdiag_elements_for_loss = int(n_rois_for_loss * (n_rois_for_loss - 1))
         logger.info(
             f"  {fold_idx_str} VAE objective: recon_loss_mode={args.recon_loss_mode}, "
             f"final_activation={args.vae_final_activation}, encoder_norm_mode={args.vae_encoder_norm_mode}, "
-            f"dropout_scope={args.vae_dropout_scope}, block_order={args.vae_block_order}, "
+            f"dropout_scope={args.vae_dropout_scope}, dropout_rate={args.dropout_rate_vae}, "
+            f"encoder_dropout_rate={args.encoder_dropout_rate_vae}, decoder_dropout_rate={args.decoder_dropout_rate_vae}, "
+            f"block_order={args.vae_block_order}, "
+            f"conditioning_mode={args.vae_conditioning_mode}, conditioning_vars={args.vae_conditioning_vars}, "
+            f"conditioning_dim={vae_conditioning_dim}, corr_lambda={args.vae_latent_covariate_corr_lambda}, "
             f"channel_dropout_p={args.vae_channel_dropout_p}, "
+            f"input_harmonization_mode={args.input_harmonization_mode}, "
             f"input_channels={num_input_channels_for_vae}, "
             f"n_rois={n_rois_for_loss}, offdiag_elements_per_channel={offdiag_elements_for_loss}, "
-            f"reconstruction_loss_scale={describe_recon_loss_mode(args.recon_loss_mode, num_input_channels_for_vae, n_rois_for_loss)}"
+            f"recon_loss_channel_weights={args.recon_loss_channel_weights}, "
+            f"reconstruction_loss_scale={describe_recon_loss_mode(args.recon_loss_mode, num_input_channels_for_vae, n_rois_for_loss, args.recon_loss_channel_weights)}"
         )
         
         optimizer_vae = optim.AdamW(vae_fold_k.parameters(), lr=args.lr_vae, weight_decay=args.weight_decay_vae, amsgrad=True)
@@ -772,9 +1781,11 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
                 "train_loss": _history_value_at_epoch("train_loss", checkpoint_epoch),
                 "train_recon": _history_value_at_epoch("train_recon", checkpoint_epoch),
                 "train_kld": _history_value_at_epoch("train_kld", checkpoint_epoch),
+                "train_latent_covariate_corr": _history_value_at_epoch("train_latent_covariate_corr", checkpoint_epoch),
                 "val_loss": _history_value_at_epoch("val_loss", checkpoint_epoch),
                 "val_recon": _history_value_at_epoch("val_recon", checkpoint_epoch),
                 "val_kld": _history_value_at_epoch("val_kld", checkpoint_epoch),
+                "val_latent_covariate_corr": _history_value_at_epoch("val_latent_covariate_corr", checkpoint_epoch),
                 "val_loss_beta_max": _history_value_at_epoch("val_loss_modelsel", checkpoint_epoch),
                 "val_loss_modelsel": _history_value_at_epoch("val_loss_modelsel", checkpoint_epoch),
                 "best_epoch_so_far": int(best_epoch),
@@ -821,6 +1832,7 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
             "train_loss": [], "train_recon": [], "train_kld": [],
             "val_loss": [], "val_recon": [], "val_kld": [],
             "val_loss_modelsel": [],
+            "train_latent_covariate_corr": [], "val_latent_covariate_corr": [],
 
             # para debug
             "beta": [],
@@ -834,7 +1846,7 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
             should_stop_vae = False
             vae_fold_k.train()
             # Acumuladores para la época de entrenamiento
-            epoch_train_loss, epoch_train_recon, epoch_train_kld = 0.0, 0.0, 0.0 # ⬅️ NUEVO
+            epoch_train_loss, epoch_train_recon, epoch_train_kld, epoch_train_corr = 0.0, 0.0, 0.0, 0.0
             current_beta = get_cyclical_beta_schedule(
                 current_epoch=epoch,
                 total_epochs=args.epochs_vae,
@@ -843,15 +1855,21 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
                 ratio_increase=args.cyclical_beta_ratio_increase
             )
 
-            for i, (data,) in enumerate(vae_train_loader):
-                data = data.to(device)
+            for i, batch in enumerate(vae_train_loader):
+                data = batch[0].to(device)
+                cond_batch = batch[1].to(device) if vae_conditioning_enabled else None
                 optimizer_vae.zero_grad(set_to_none=True)
 
                 with autocast(enabled=(device.type == 'cuda')):
                     vae_input = apply_channel_dropout_train(data, args.vae_channel_dropout_p)
-                    recon_batch, mu, logvar, _ = vae_fold_k(vae_input)
-                    loss, recon, kld = vae_loss_function(
-                        recon_batch, data, mu, logvar, beta=current_beta, recon_loss_mode=args.recon_loss_mode
+                    recon_batch, mu, logvar, _ = vae_fold_k(vae_input, condition=cond_batch)
+                    loss, recon, kld, corr_penalty = vae_loss_function(
+                        recon_batch, data, mu, logvar,
+                        beta=current_beta,
+                        recon_loss_mode=args.recon_loss_mode,
+                        recon_loss_channel_weights=args.recon_loss_channel_weights,
+                        condition=cond_batch,
+                        latent_covariate_corr_lambda=args.vae_latent_covariate_corr_lambda,
                     )
                 
                 scaler.scale(loss).backward()
@@ -865,12 +1883,14 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
                 epoch_train_loss += loss.item() * data.size(0)
                 epoch_train_recon += recon.item() * data.size(0)
                 epoch_train_kld += kld.item() * data.size(0)
+                epoch_train_corr += corr_penalty.item() * data.size(0)
             # ▲▲▲ FIN BUCLE DE ENTRENAMIENTO MODIFICADO ▲▲▲
             
             # Calculamos las medias y las guardamos en el historial
             history_data["train_loss"].append(epoch_train_loss / len(vae_train_loader.dataset))
             history_data["train_recon"].append(epoch_train_recon / len(vae_train_loader.dataset))
             history_data["train_kld"].append(epoch_train_kld / len(vae_train_loader.dataset))
+            history_data["train_latent_covariate_corr"].append(epoch_train_corr / len(vae_train_loader.dataset))
             train_kld_over_recon = (
                 history_data["train_kld"][-1] / history_data["train_recon"][-1]
                 if history_data["train_recon"][-1] else np.nan
@@ -887,6 +1907,7 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
                        f"TrL(curβ): {history_data['train_loss'][-1]:.2f} "
                        f"(R: {history_data['train_recon'][-1]:.2f}, "
                        f"KLD: {history_data['train_kld'][-1]:.2f}), "
+                       f"Corr: {history_data['train_latent_covariate_corr'][-1]:.4f}, "
                        f"KLD/R={train_kld_over_recon:.4f}, βKLD/R={train_beta_kld_over_recon:.4f}, "
                        f"β={current_beta:.3f}, LR={optimizer_vae.param_groups[0]['lr']:.2e}")
 
@@ -894,21 +1915,27 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
             if vae_internal_val_loader:
                 vae_fold_k.eval()
                 # Acumuladores para la época de validación
-                epoch_val_loss_curBeta, epoch_val_recon, epoch_val_kld = 0.0, 0.0, 0.0
+                epoch_val_loss_curBeta, epoch_val_recon, epoch_val_kld, epoch_val_corr = 0.0, 0.0, 0.0, 0.0
                 with torch.no_grad():
                     with autocast(enabled=(device.type == 'cuda')):
-                        for (val_data,) in vae_internal_val_loader:
-                            val_data = val_data.to(device)
-                            recon_val, mu_val, logvar_val, _ = vae_fold_k(val_data)
+                        for val_batch in vae_internal_val_loader:
+                            val_data = val_batch[0].to(device)
+                            val_cond = val_batch[1].to(device) if vae_conditioning_enabled else None
+                            recon_val, mu_val, logvar_val, _ = vae_fold_k(val_data, condition=val_cond)
                             # forward con el beta actual (lo que realmente entrenamos esta época)
-                            v_loss_curBeta, v_recon, v_kld = vae_loss_function(
+                            v_loss_curBeta, v_recon, v_kld, v_corr = vae_loss_function(
                                 recon_val, val_data, mu_val, logvar_val,
-                                beta=current_beta, recon_loss_mode=args.recon_loss_mode
+                                beta=current_beta,
+                                recon_loss_mode=args.recon_loss_mode,
+                                recon_loss_channel_weights=args.recon_loss_channel_weights,
+                                condition=val_cond,
+                                latent_covariate_corr_lambda=args.vae_latent_covariate_corr_lambda,
                             )
 
                             epoch_val_loss_curBeta += v_loss_curBeta.item() * val_data.size(0)
                             epoch_val_recon       += v_recon.item()       * val_data.size(0)
                             epoch_val_kld += v_kld.item() * val_data.size(0)
+                            epoch_val_corr += v_corr.item() * val_data.size(0)
 
                 # --- MÉTRICAS DE VALIDACIÓN ---
                 N_val = len(vae_internal_val_loader.dataset)
@@ -919,6 +1946,7 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
                # promedios puros de los componentes
                 avg_val_recon = epoch_val_recon / N_val
                 avg_val_kld   = epoch_val_kld   / N_val
+                avg_val_corr = epoch_val_corr / N_val
                 val_kld_over_recon = avg_val_kld / avg_val_recon if avg_val_recon else np.nan
                 val_beta_kld_over_recon = current_beta * avg_val_kld / avg_val_recon if avg_val_recon else np.nan
 
@@ -931,12 +1959,14 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
                 history_data["val_recon"].append(avg_val_recon)
                 history_data["val_kld"].append(avg_val_kld)
                 history_data["val_loss_modelsel"].append(avg_val_loss_betaMax)
+                history_data["val_latent_covariate_corr"].append(avg_val_corr)
                 history_data["val_kld_over_recon"].append(val_kld_over_recon)
                 history_data["val_beta_kld_over_recon"].append(val_beta_kld_over_recon)
 
                 log_msg += (
                     f", ValL(curβ): {avg_val_loss_curBeta:.2f} "
                     f"(R: {avg_val_recon:.2f}, KLD: {avg_val_kld:.2f}, "
+                    f"Corr: {avg_val_corr:.4f}, "
                     f"KLD/R={val_kld_over_recon:.4f}, βKLD/R={val_beta_kld_over_recon:.4f}) "
                     f"| ValL(βmax): {avg_val_loss_betaMax:.2f}"
                 )
@@ -1113,7 +2143,11 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
                 with torch.no_grad():
                     for i in range(0, norm_subset.shape[0], bs):
                         batch = torch.from_numpy(norm_subset[i:i+bs]).float().to(device)
-                        recon_batch, _, _, _ = vae_fold_k(batch)
+                        cond_batch = None
+                        if vae_conditioning_enabled:
+                            cond_np = vae_pool_conditioning[vae_actual_train_indices_local_to_pool][i:i+bs]
+                            cond_batch = torch.from_numpy(cond_np).float().to(device)
+                        recon_batch, _, _, _ = vae_fold_k(batch, condition=cond_batch)
                         recon_list.append(recon_batch.detach().cpu().numpy())
                 recon_subset = np.concatenate(recon_list, axis=0)
 
@@ -1189,16 +2223,27 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
         global_indices_clf_train_dev_all = clf_train_dev_df['tensor_idx'].values
         y_clf_train_dev_all = clf_train_dev_df['label'].values
         log_group_distributions(clf_train_dev_df, strat_cols, "Pool Train/Dev (Clasificador)", fold_idx_str)
+        clf_train_dev_conditioning = apply_vae_conditioning_transformer(clf_train_dev_df, vae_conditioning_transformer) if vae_conditioning_enabled else None
 
 
         vae_fold_k.eval()
         with torch.no_grad():
+            clf_train_dev_tensor_for_latent = (
+                harmonized_clf_train_dev_tensor_original_scale
+                if harmonized_clf_train_dev_tensor_original_scale is not None
+                else current_global_tensor[global_indices_clf_train_dev_all]
+            )
             full_train_dev_tensor_norm = apply_normalization_params(
-                current_global_tensor[global_indices_clf_train_dev_all],
+                clf_train_dev_tensor_for_latent,
                 norm_params_fold_list
             )
+            cond_train_dev_tensor = (
+                torch.from_numpy(clf_train_dev_conditioning).float().to(device)
+                if vae_conditioning_enabled else None
+            )
             _, mu_train_dev, _, z_train_dev = vae_fold_k(
-                torch.from_numpy(full_train_dev_tensor_norm).float().to(device)
+                torch.from_numpy(full_train_dev_tensor_norm).float().to(device),
+                condition=cond_train_dev_tensor,
             )
 
             
@@ -1262,15 +2307,29 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
             gc.collect()
 
 
+            clf_test_tensor_for_latent = (
+                harmonized_clf_test_tensor_original_scale
+                if harmonized_clf_test_tensor_original_scale is not None
+                else current_global_tensor[global_indices_clf_test_this_fold]
+            )
             X_test_final_tensor_norm = apply_normalization_params(
-                current_global_tensor[global_indices_clf_test_this_fold],
+                clf_test_tensor_for_latent,
                 norm_params_fold_list
             )
             mu_test_final_np, z_test_final_np, X_np_test = None, None, None
             if X_test_final_tensor_norm is not None and X_test_final_tensor_norm.shape[0] > 0:
 
+                clf_test_conditioning = (
+                    apply_vae_conditioning_transformer(cn_ad_df.iloc[test_clf_idx_in_cn_ad_df].copy(), vae_conditioning_transformer)
+                    if vae_conditioning_enabled else None
+                )
+                cond_test_tensor = (
+                    torch.from_numpy(clf_test_conditioning).float().to(device)
+                    if vae_conditioning_enabled else None
+                )
                 _, mu_test_final, _, z_test_final = vae_fold_k(
-                    torch.from_numpy(X_test_final_tensor_norm).float().to(device)
+                    torch.from_numpy(X_test_final_tensor_norm).float().to(device),
+                    condition=cond_test_tensor,
                 )
                 #X_np_test = mu_test_final.cpu().numpy() if args.latent_features_type == 'mu' else z_test_final.cpu().numpy()
                 # Capture CPU numpy versions
@@ -1550,6 +2609,9 @@ def train_and_evaluate_pipeline(global_tensor_all_channels: np.ndarray,
                 "recon_loss_mode":    args.recon_loss_mode,
                 "vae_final_activation": args.vae_final_activation,
                 "vae_dropout_scope":  args.vae_dropout_scope,
+                "dropout_rate_vae":   args.dropout_rate_vae,
+                "encoder_dropout_rate_vae": args.encoder_dropout_rate_vae,
+                "decoder_dropout_rate_vae": args.decoder_dropout_rate_vae,
                 "vae_block_order":    args.vae_block_order,
                 "channels_used":      ",".join(map(str, selected_channel_names_in_tensor)),
             }
@@ -1908,6 +2970,17 @@ if __name__ == "__main__":
         ),
     )
     group_cv.add_argument("--classifier_stratify_cols", type=str, nargs='*', default=['Sex'], help="Columnas adicionales para estratificación del clasificador.")
+    group_cv.add_argument(
+        "--classifier_exclude_subject_ids",
+        type=str,
+        nargs="*",
+        default=None,
+        help=(
+            "Default-off guard for branch-specific diagnostics: SubjectID values to "
+            "exclude from the supervised AD/CN classifier pool only. The subjects "
+            "remain eligible for the unsupervised VAE pool if otherwise valid."
+        ),
+    )
     #group_cv.add_argument("--classifier_hp_tune_ratio", type=float, default=0.25, help="Proporción de datos de train/dev para ajuste de HP.")
     group_vae = parser.add_argument_group('VAE Model and Training')
     group_vae.add_argument("--num_conv_layers_encoder", type=int, default=4, choices=[3, 4], help="Capas convolucionales en encoder VAE.") 
@@ -1925,7 +2998,18 @@ if __name__ == "__main__":
         help=(
             "Modo de pérdida de reconstrucción VAE. "
             "mse_sum_batchmean_current preserva el comportamiento histórico. "
-            "offdiag_channelmean_sum usa sólo off-diagonal, suma por canal y promedia canales/batch."
+            "offdiag_channelmean_sum y mse_offdiag_channel_mean_sum usan sólo off-diagonal, "
+            "suman por canal y promedian canales/batch."
+        ),
+    )
+    group_vae.add_argument(
+        "--recon_loss_channel_weights",
+        type=float,
+        nargs="*",
+        default=None,
+        help=(
+            "Pesos por canal seleccionado para mse_offdiag_channel_weighted_sum. "
+            "Deben ser finitos, no negativos, tener la misma longitud que channels_to_use y sumar 1."
         ),
     )
     group_vae.add_argument("--cyclical_beta_n_cycles", type=int, default=4, help="Ciclos para annealing de beta.")
@@ -1934,6 +3018,24 @@ if __name__ == "__main__":
     group_vae.add_argument("--vae_final_activation", type=str, default="tanh", choices=["sigmoid", "tanh", "linear", "none"], help="Activación final del decoder VAE.")
     group_vae.add_argument("--intermediate_fc_dim_vae", type=str, default="quarter", help="Dimensión FC intermedia en VAE ('0', 'half', 'quarter', o entero).")
     group_vae.add_argument("--dropout_rate_vae", type=float, default=0.2, help="Tasa de dropout en VAE.")
+    group_vae.add_argument(
+        "--encoder_dropout_rate_vae",
+        type=float,
+        default=None,
+        help=(
+            "Optional encoder hidden dropout rate. If omitted, encoder_conv and encoder_fc "
+            "use --dropout_rate_vae exactly as in legacy configs."
+        ),
+    )
+    group_vae.add_argument(
+        "--decoder_dropout_rate_vae",
+        type=float,
+        default=None,
+        help=(
+            "Optional decoder hidden dropout rate. If omitted, decoder_fc and decoder_conv "
+            "use --dropout_rate_vae exactly as in legacy configs."
+        ),
+    )
     group_vae.add_argument(
         "--vae_dropout_scope",
         type=str,
@@ -1954,6 +3056,33 @@ if __name__ == "__main__":
             "(Conv/Linear -> GELU -> Norm -> Dropout en conv; FC histórico). "
             "norm_act usa Conv/Linear -> Norm -> GELU -> Dropout."
         ),
+    )
+    group_vae.add_argument(
+        "--vae_conditioning_mode",
+        type=str,
+        default="none",
+        choices=list(CONDITIONING_MODE_CHOICES),
+        help=(
+            "Modo condicional del VAE. none preserva comportamiento histórico; "
+            "decoder_only concatena covariables a z antes del decoder FC; "
+            "encoder_decoder concatena Age al encoder FC antes de mu/logvar y a z antes del decoder."
+        ),
+    )
+    group_vae.add_argument(
+        "--vae_conditioning_vars",
+        type=str,
+        default="none",
+        choices=list(VAE_CONDITIONING_VAR_CHOICES),
+        help=(
+            "Covariables para condicionar el VAE. Age se estandariza fold-localmente; "
+            "Sex se codifica fold-localmente. encoder_decoder sólo permite Age."
+        ),
+    )
+    group_vae.add_argument(
+        "--vae_latent_covariate_corr_lambda",
+        type=float,
+        default=0.0,
+        help="Peso opcional para penalización diferenciable de correlación cuadrada entre mu y covariables condicionantes.",
     )
     group_vae.add_argument("--use_layernorm_vae_fc", action='store_true', help="Usar LayerNorm en capas FC del VAE.")
     group_vae.add_argument(
@@ -1976,8 +3105,87 @@ if __name__ == "__main__":
         choices=list(VAE_TRAIN_SAMPLER_STRATEGIES),
         help="Sampler VAE opcional y fold-local. none preserva comportamiento histórico.",
     )
+    group_vae.add_argument(
+        "--vae_pool_composition_strategy",
+        type=str,
+        default=VAE_POOL_CURRENT_ALL,
+        choices=list(VAE_POOL_COMPOSITION_STRATEGIES),
+        help=(
+            "Estrategia fold-local para componer el pool VAE antes del split train/val. "
+            "current_all_pool preserva el comportamiento histórico. Las otras opciones "
+            "usan etiquetas diagnósticas para componer el pool y deben tratarse como exploratorias."
+        ),
+    )
+    group_vae.add_argument(
+        "--input_harmonization_mode",
+        type=str,
+        default="none",
+        choices=["none", "foldwise_combat"],
+        help=(
+            "Default-off pre-VAE input harmonization. 'foldwise_combat' fits ComBat only on "
+            "outer train/dev VAE-pool subjects and applies frozen transforms to classifier "
+            "train/dev and outer test tensors."
+        ),
+    )
+    group_vae.add_argument(
+        "--input_harmonization_batch_col",
+        type=str,
+        default="Manufacturer",
+        help="Batch column for foldwise input harmonization. Branch B uses Manufacturer.",
+    )
+    group_vae.add_argument(
+        "--input_harmonization_covariates",
+        type=str,
+        nargs="*",
+        default=["Age", "Sex"],
+        help="Protected covariates for foldwise input harmonization. Diagnosis must not be included.",
+    )
+    group_vae.add_argument(
+        "--input_harmonization_excluded_covariates",
+        type=str,
+        nargs="*",
+        default=["ResearchGroup_Mapped"],
+        help="Covariates explicitly excluded from foldwise input harmonization.",
+    )
+    group_vae.add_argument(
+        "--input_harmonization_fit_scope",
+        type=str,
+        default="outer_train_dev_only",
+        choices=["outer_train_dev_only"],
+        help="Fit scope for foldwise input harmonization.",
+    )
+    group_vae.add_argument(
+        "--input_harmonization_vectorization",
+        type=str,
+        default="upper_offdiag_by_channel",
+        choices=["upper_offdiag_by_channel"],
+        help="Vectorization used by foldwise input harmonization.",
+    )
     group_vae.add_argument("--vae_val_split_ratio", type=float, default=0.2, help="Proporción para validación VAE.")
     group_vae.add_argument("--vae_stratify_cols", type=str, nargs='*', default=None, help="Columnas adicionales para estratificar el split interno train/val del VAE. Siempre se antepone ResearchGroup_Mapped. Default None preserva el comportamiento histórico ResearchGroup_Mapped+Sex+Age_Group.")
+    group_vae.add_argument(
+        "--vae_required_metadata_cols",
+        type=str,
+        nargs="*",
+        default=None,
+        help=(
+            "Si se pasa, los sujetos del pool VAE que tengan valores missing en CUALQUIERA "
+            "de estas columnas son removidos del pool antes del split train/val, con QC CSV por fold. "
+            "Default None preserva el comportamiento actual sin ningún filtro adicional. "
+            "NO afecta el pool del clasificador AD/CN."
+        ),
+    )
+    group_vae.add_argument(
+        "--vae_abort_if_val_split_fails",
+        action="store_true",
+        default=False,
+        help=(
+            "If set, abort the entire run when the VAE internal validation split fails "
+            "(e.g. due to singleton strata from tensor subjects absent from metadata). "
+            "Default False preserves the existing silent fallback to full-pool train / empty val. "
+            "Recommended for metadata-rescue runs to prevent silent disablement of early stopping."
+        ),
+    )
     group_vae.add_argument("--early_stopping_patience_vae", type=int, default=20, help="Paciencia early stopping VAE. (Recomendado: 15-20)")
     group_vae.add_argument("--lr_scheduler_patience_vae", type=int, default=15, help="Paciencia para el scheduler ReduceLROnPlateau del VAE.")
     # ▼▼▼ NUEVOS ARGUMENTOS ▼▼▼
@@ -2158,6 +3366,23 @@ if __name__ == "__main__":
         args.lr_scheduler_patience_vae = 0
     if not (0.0 <= float(args.vae_channel_dropout_p) < 1.0):
         parser.error("--vae_channel_dropout_p must be >= 0 and < 1.")
+    if args.vae_conditioning_mode == "none":
+        if args.vae_conditioning_vars != "none":
+            parser.error("--vae_conditioning_vars must be none when --vae_conditioning_mode=none.")
+        if float(args.vae_latent_covariate_corr_lambda) != 0.0:
+            parser.error("--vae_latent_covariate_corr_lambda must be 0 when --vae_conditioning_mode=none.")
+    elif args.vae_conditioning_mode == "decoder_only":
+        if args.vae_conditioning_vars == "none":
+            parser.error("--vae_conditioning_vars must be Age, sex, age_sex, or manufacturer when --vae_conditioning_mode=decoder_only.")
+        if float(args.vae_latent_covariate_corr_lambda) < 0.0:
+            parser.error("--vae_latent_covariate_corr_lambda must be >= 0.")
+    elif args.vae_conditioning_mode == "encoder_decoder":
+        if str(args.vae_conditioning_vars).lower() != "age":
+            parser.error("--vae_conditioning_vars must be Age when --vae_conditioning_mode=encoder_decoder.")
+        if float(args.vae_latent_covariate_corr_lambda) < 0.0:
+            parser.error("--vae_latent_covariate_corr_lambda must be >= 0.")
+    else:
+        parser.error(f"Unsupported --vae_conditioning_mode={args.vae_conditioning_mode!r}.")
 
     if args.save_vae_checkpoints_every_n_epochs is not None and args.save_vae_checkpoints_every_n_epochs <= 0:
         logger.warning(
@@ -2177,21 +3402,54 @@ if __name__ == "__main__":
             "Se desactiva pruning de checkpoints periódicos."
         )
         args.save_vae_checkpoints_keep_last_n = None
+    if args.recon_loss_mode == RECON_LOSS_MODE_MSE_OFFDIAG_CHANNEL_WEIGHTED_SUM:
+        if args.recon_loss_channel_weights is None or len(args.recon_loss_channel_weights) == 0:
+            parser.error("--recon_loss_channel_weights is required for mse_offdiag_channel_weighted_sum.")
+        weights = np.asarray(args.recon_loss_channel_weights, dtype=float)
+        if not np.isfinite(weights).all():
+            parser.error("--recon_loss_channel_weights must be finite.")
+        if (weights < 0).any():
+            parser.error("--recon_loss_channel_weights must be non-negative.")
+        if not np.isclose(float(weights.sum()), 1.0, rtol=1e-5, atol=1e-6):
+            parser.error(f"--recon_loss_channel_weights must sum to 1.0, got {float(weights.sum())}.")
+        if getattr(args, "channels_to_use", None) is not None and len(weights) != len(args.channels_to_use):
+            parser.error(
+                "--recon_loss_channel_weights length must match --channels_to_use length "
+                f"({len(args.channels_to_use)}), got {len(weights)}."
+            )
+    elif args.recon_loss_channel_weights:
+        logger.warning(
+            "recon_loss_channel_weights=%s supplied but recon_loss_mode=%s does not use weights.",
+            args.recon_loss_channel_weights,
+            args.recon_loss_mode,
+        )
 
     if args.dry_run:
         logger.info("DRY-RUN solicitado: no se cargarán datos, no se entrenará VAE/clasificador y no se escribirán resultados.")
         logger.info(
             "VAE objective preview: recon_loss_mode=%s, final_activation=%s, beta_vae=%s, "
-            "encoder_norm_mode=%s, dropout_scope=%s, block_order=%s, "
-            "channel_dropout_p=%s, train_sampler_strategy=%s",
+            "encoder_norm_mode=%s, dropout_scope=%s, dropout_rate=%s, "
+            "encoder_dropout_rate=%s, decoder_dropout_rate=%s, block_order=%s, "
+            "conditioning_mode=%s, conditioning_vars=%s, corr_lambda=%s, "
+            "channel_dropout_p=%s, train_sampler_strategy=%s, pool_composition_strategy=%s, "
+            "input_harmonization_mode=%s, recon_loss_channel_weights=%s",
             args.recon_loss_mode,
             args.vae_final_activation,
             args.beta_vae,
             args.vae_encoder_norm_mode,
             args.vae_dropout_scope,
+            args.dropout_rate_vae,
+            args.encoder_dropout_rate_vae,
+            args.decoder_dropout_rate_vae,
             args.vae_block_order,
+            args.vae_conditioning_mode,
+            args.vae_conditioning_vars,
+            args.vae_latent_covariate_corr_lambda,
             args.vae_channel_dropout_p,
             args.vae_train_sampler_strategy,
+            args.vae_pool_composition_strategy,
+            args.input_harmonization_mode,
+            args.recon_loss_channel_weights,
         )
         sys.exit(0)
     

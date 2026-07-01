@@ -6,7 +6,7 @@ CNN-based β-VAE used in:
  A β-VAE and Saliency Map Framework"
 """
 
-from typing import Tuple, Union, List
+from typing import Any, Dict, Optional, Tuple, Union, List
 import torch
 import torch.nn as nn
 
@@ -24,7 +24,138 @@ BLOCK_ORDER_CHOICES = (
     "norm_act",
 )
 
-__all__ = ["ConvolutionalVAE", "DROPOUT_SCOPE_CHOICES", "BLOCK_ORDER_CHOICES"]
+CONDITIONING_MODE_CHOICES = (
+    "none",
+    "decoder_only",
+    "encoder_decoder",
+)
+
+__all__ = [
+    "ConvolutionalVAE",
+    "DROPOUT_SCOPE_CHOICES",
+    "BLOCK_ORDER_CHOICES",
+    "CONDITIONING_MODE_CHOICES",
+    "build_vae_dropout_manifest",
+    "summarize_vae_dropout_manifest",
+]
+
+
+def _dropout_location_from_module_name(name: str) -> str:
+    if name.startswith("encoder_conv."):
+        return "encoder_conv"
+    if name.startswith("encoder_fc_intermediate."):
+        return "encoder_fc"
+    if name.startswith("decoder_fc_intermediate."):
+        return "decoder_fc"
+    if name.startswith("decoder_conv."):
+        return "decoder_conv"
+    if name in {"fc_mu", "fc_logvar"} or name.startswith(("fc_mu.", "fc_logvar.")):
+        return "latent_head"
+    if name.startswith("decoder_fc_to_conv."):
+        return "decoder_fc_to_conv"
+    return "other"
+
+
+def build_vae_dropout_manifest(model: nn.Module) -> List[Dict[str, Any]]:
+    """Return a location-aware manifest of explicit dropout modules.
+
+    This is intentionally read-only: it inspects module structure and does not
+    mutate training/eval mode or model parameters.
+    """
+
+    active_scope = str(getattr(model, "dropout_scope", "unknown"))
+    rows: List[Dict[str, Any]] = []
+    for module_name, module in model.named_modules():
+        if isinstance(module, (nn.Dropout, nn.Dropout2d)):
+            rows.append(
+                {
+                    "module_name": module_name,
+                    "module_type": module.__class__.__name__,
+                    "p": float(module.p),
+                    "location": _dropout_location_from_module_name(module_name),
+                    "active_scope": active_scope,
+                }
+            )
+    return rows
+
+
+def summarize_vae_dropout_manifest(
+    manifest: List[Dict[str, Any]],
+    *,
+    dropout_scope: str,
+    dropout_rate: float,
+    num_conv_layers_encoder: int,
+    has_intermediate_fc: bool,
+    encoder_dropout_rate: Optional[float] = None,
+    decoder_dropout_rate: Optional[float] = None,
+) -> List[Dict[str, Any]]:
+    """Summarize observed dropout counts against the architectural expectation."""
+
+    locations = ["encoder_conv", "encoder_fc", "decoder_fc", "decoder_conv"]
+    observed = {loc: 0 for loc in locations}
+    for row in manifest:
+        loc = str(row.get("location", "other"))
+        if loc in observed:
+            observed[loc] += 1
+
+    global_rate = float(dropout_rate)
+    effective_rates = {
+        "encoder_conv": global_rate if encoder_dropout_rate is None else float(encoder_dropout_rate),
+        "encoder_fc": global_rate if encoder_dropout_rate is None else float(encoder_dropout_rate),
+        "decoder_fc": global_rate if decoder_dropout_rate is None else float(decoder_dropout_rate),
+        "decoder_conv": global_rate if decoder_dropout_rate is None else float(decoder_dropout_rate),
+    }
+
+    expected = {loc: 0 for loc in locations}
+    if any(rate > 0.0 for rate in effective_rates.values()):
+        if dropout_scope == "legacy_all":
+            expected["encoder_conv"] = int(num_conv_layers_encoder) if effective_rates["encoder_conv"] > 0.0 else 0
+            expected["encoder_fc"] = 1 if has_intermediate_fc and effective_rates["encoder_fc"] > 0.0 else 0
+            expected["decoder_fc"] = 1 if has_intermediate_fc and effective_rates["decoder_fc"] > 0.0 else 0
+            expected["decoder_conv"] = max(int(num_conv_layers_encoder) - 1, 0) if effective_rates["decoder_conv"] > 0.0 else 0
+            formula = "L + has_fc + has_fc + (L - 1)"
+        elif dropout_scope in {"encoder_only", "no_decoder_dropout"}:
+            expected["encoder_conv"] = int(num_conv_layers_encoder) if effective_rates["encoder_conv"] > 0.0 else 0
+            expected["encoder_fc"] = 1 if has_intermediate_fc and effective_rates["encoder_fc"] > 0.0 else 0
+            formula = "L + has_fc"
+        elif dropout_scope == "encoder_fc_only":
+            expected["encoder_fc"] = 1 if has_intermediate_fc and effective_rates["encoder_fc"] > 0.0 else 0
+            formula = "has_fc"
+        elif dropout_scope == "encoder_conv_only":
+            expected["encoder_conv"] = int(num_conv_layers_encoder) if effective_rates["encoder_conv"] > 0.0 else 0
+            formula = "L"
+        elif dropout_scope == "none":
+            formula = "0"
+        else:
+            formula = "unknown_scope"
+    else:
+        formula = "0 because dropout_rate <= 0"
+
+    rows = []
+    for loc in locations:
+        rows.append(
+            {
+                "location": loc,
+                "observed_count": int(observed[loc]),
+                "expected_count": int(expected[loc]),
+                "matches_expected": bool(observed[loc] == expected[loc]),
+                "expected_formula": formula,
+                "dropout_scope": dropout_scope,
+                "dropout_rate": float(effective_rates[loc]),
+            }
+        )
+    rows.append(
+        {
+            "location": "total",
+            "observed_count": int(sum(observed.values())),
+            "expected_count": int(sum(expected.values())),
+            "matches_expected": bool(sum(observed.values()) == sum(expected.values())),
+            "expected_formula": formula,
+            "dropout_scope": dropout_scope,
+            "dropout_rate": float(dropout_rate),
+        }
+    )
+    return rows
 
 
 class ConvolutionalVAE(nn.Module):
@@ -38,6 +169,8 @@ class ConvolutionalVAE(nn.Module):
         final_activation: str = "tanh",
         intermediate_fc_dim_config: Union[int, str] = "0",
         dropout_rate: float = 0.2,
+        encoder_dropout_rate: Optional[float] = None,
+        decoder_dropout_rate: Optional[float] = None,
         use_layernorm_fc: bool = False,
         num_conv_layers_encoder: int = 4,
         decoder_type: str = "convtranspose",
@@ -45,6 +178,8 @@ class ConvolutionalVAE(nn.Module):
         encoder_norm_mode: str = "groupnorm",
         dropout_scope: str = "legacy_all",
         block_order: str = "legacy_act_norm",
+        conditioning_mode: str = "none",
+        conditioning_dim: int = 0,
     ) -> None:
         super().__init__()
 
@@ -72,9 +207,21 @@ class ConvolutionalVAE(nn.Module):
             raise ValueError(
                 "block_order must be one of: " + ", ".join(BLOCK_ORDER_CHOICES)
             )
+        conditioning_mode = str(conditioning_mode or "none").lower()
+        if conditioning_mode not in CONDITIONING_MODE_CHOICES:
+            raise ValueError(
+                "conditioning_mode must be one of: " + ", ".join(CONDITIONING_MODE_CHOICES)
+            )
+        conditioning_dim = int(conditioning_dim or 0)
+        if conditioning_mode == "none":
+            conditioning_dim = 0
+        elif conditioning_dim <= 0:
+            raise ValueError("conditioning_dim must be > 0 when conditioning_mode is enabled.")
 
         self.final_activation_name = final_activation_norm
         self.dropout_rate = float(dropout_rate)
+        self.encoder_dropout_rate = self.dropout_rate if encoder_dropout_rate is None else float(encoder_dropout_rate)
+        self.decoder_dropout_rate = self.dropout_rate if decoder_dropout_rate is None else float(decoder_dropout_rate)
         self.dropout_scope = dropout_scope
         self.block_order = block_order
         self.use_layernorm_fc = use_layernorm_fc
@@ -82,6 +229,8 @@ class ConvolutionalVAE(nn.Module):
         self.decoder_type = decoder_type
         self.num_groups = num_groups
         self.encoder_norm_mode = encoder_norm_mode
+        self.conditioning_mode = conditioning_mode
+        self.conditioning_dim = conditioning_dim
 
         # ------------------------------
         # Encoder (conv → optional FC)
@@ -151,14 +300,20 @@ class ConvolutionalVAE(nn.Module):
             self.encoder_fc_intermediate = nn.Identity()
             mu_logvar_in = flat_size
 
-        self.fc_mu = nn.Linear(mu_logvar_in, latent_dim)
-        self.fc_logvar = nn.Linear(mu_logvar_in, latent_dim)
+        encoder_latent_in = (
+            mu_logvar_in + self.conditioning_dim
+            if conditioning_mode == "encoder_decoder"
+            else mu_logvar_in
+        )
+        self.fc_mu = nn.Linear(encoder_latent_in, latent_dim)
+        self.fc_logvar = nn.Linear(encoder_latent_in, latent_dim)
 
         # ------------------------------
         # Decoder
         # ------------------------------
+        decoder_latent_in = latent_dim + self.conditioning_dim
         if self.intermediate_fc_dim:
-            dec_fc_layers = [nn.Linear(latent_dim, self.intermediate_fc_dim)]
+            dec_fc_layers = [nn.Linear(decoder_latent_in, self.intermediate_fc_dim)]
             if self.block_order == "legacy_act_norm":
                 if use_layernorm_fc:
                     dec_fc_layers.append(nn.LayerNorm(self.intermediate_fc_dim))
@@ -177,7 +332,7 @@ class ConvolutionalVAE(nn.Module):
             dec_fc_out = self.intermediate_fc_dim
         else:
             self.decoder_fc_intermediate = nn.Identity()
-            dec_fc_out = latent_dim
+            dec_fc_out = decoder_latent_in
 
         self.decoder_fc_to_conv = nn.Linear(dec_fc_out, flat_size)
         # Decoder conv layers
@@ -290,7 +445,7 @@ class ConvolutionalVAE(nn.Module):
         return nn.BatchNorm1d(features)
 
     def _dropout_enabled(self, location: str) -> bool:
-        if self.dropout_rate <= 0.0:
+        if self._dropout_rate_for_location(location) <= 0.0:
             return False
         if self.dropout_scope == "legacy_all":
             return True
@@ -304,11 +459,18 @@ class ConvolutionalVAE(nn.Module):
             return location == "encoder_conv"
         return False
 
+    def _dropout_rate_for_location(self, location: str) -> float:
+        if location.startswith("encoder_"):
+            return float(self.encoder_dropout_rate)
+        if location.startswith("decoder_"):
+            return float(self.decoder_dropout_rate)
+        return float(self.dropout_rate)
+
     def _make_dropout(self, location: str, spatial: bool) -> nn.Module:
         if not self._dropout_enabled(location):
             return nn.Identity()
         dropout_cls = nn.Dropout2d if spatial else nn.Dropout
-        return dropout_cls(p=self.dropout_rate)
+        return dropout_cls(p=self._dropout_rate_for_location(location))
 
     def _resolve_intermediate_fc(self, cfg: Union[int, str], flat_size: int) -> int:
         if cfg == "0" or cfg == 0:
@@ -325,10 +487,25 @@ class ConvolutionalVAE(nn.Module):
                 return 0
         return int(cfg)
 
-    def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _prepare_encoder_input(self, h: torch.Tensor, condition: Optional[torch.Tensor]) -> torch.Tensor:
+        if self.conditioning_mode != "encoder_decoder":
+            return h
+        if condition is None:
+            raise ValueError("condition tensor is required when conditioning_mode='encoder_decoder'.")
+        condition = condition.to(device=h.device, dtype=h.dtype)
+        if condition.ndim != 2:
+            raise ValueError(f"condition must be 2D [B,C], got shape={tuple(condition.shape)}")
+        if condition.shape[0] != h.shape[0]:
+            raise ValueError(f"condition batch size {condition.shape[0]} != h batch size {h.shape[0]}")
+        if condition.shape[1] != self.conditioning_dim:
+            raise ValueError(f"condition dim {condition.shape[1]} != expected {self.conditioning_dim}")
+        return torch.cat([h, condition], dim=1)
+
+    def encode(self, x: torch.Tensor, condition: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
         h = self.encoder_conv(x)
         h = h.view(h.size(0), -1)
         h = self.encoder_fc_intermediate(h)
+        h = self._prepare_encoder_input(h, condition)
         return self.fc_mu(h), self.fc_logvar(h)
 
     @staticmethod
@@ -337,8 +514,23 @@ class ConvolutionalVAE(nn.Module):
         eps = torch.randn_like(std)
         return mu + eps * std
 
-    def decode(self, z: torch.Tensor) -> torch.Tensor:
-        h = self.decoder_fc_intermediate(z)
+    def _prepare_decoder_input(self, z: torch.Tensor, condition: Optional[torch.Tensor]) -> torch.Tensor:
+        if self.conditioning_mode == "none":
+            return z
+        if condition is None:
+            raise ValueError("condition tensor is required when conditioning_mode is enabled.")
+        condition = condition.to(device=z.device, dtype=z.dtype)
+        if condition.ndim != 2:
+            raise ValueError(f"condition must be 2D [B,C], got shape={tuple(condition.shape)}")
+        if condition.shape[0] != z.shape[0]:
+            raise ValueError(f"condition batch size {condition.shape[0]} != z batch size {z.shape[0]}")
+        if condition.shape[1] != self.conditioning_dim:
+            raise ValueError(f"condition dim {condition.shape[1]} != expected {self.conditioning_dim}")
+        return torch.cat([z, condition], dim=1)
+
+    def decode(self, z: torch.Tensor, condition: Optional[torch.Tensor] = None) -> torch.Tensor:
+        decoder_input = self._prepare_decoder_input(z, condition)
+        h = self.decoder_fc_intermediate(decoder_input)
         h = self.decoder_fc_to_conv(h)
         h = h.view(
             h.size(0), self.final_conv_ch, self.final_spatial_dim, self.final_spatial_dim
@@ -346,11 +538,11 @@ class ConvolutionalVAE(nn.Module):
         return self.decoder_conv(h)
 
     def forward(
-        self, x: torch.Tensor
+        self, x: torch.Tensor, condition: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        mu, logvar = self.encode(x)
+        mu, logvar = self.encode(x, condition=condition)
         z = self.reparameterize(mu, logvar)
-        recon_x = self.decode(z)
+        recon_x = self.decode(z, condition=condition)
         if recon_x.shape != x.shape:
             recon_x = nn.functional.interpolate(
                 recon_x,

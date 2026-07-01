@@ -477,6 +477,7 @@ def train_classifier(
     fold_output_dir: Path,
     site_tag: str,
     fold_seed_offset: int,
+    traindev_stratify_key: Optional[pd.Series] = None,
 ) -> Dict[str, Any]:
     """
     Tune, (optionally) calibrate, and evaluate one classifier on one LOSO fold.
@@ -496,7 +497,16 @@ def train_classifier(
         n_splits=args.inner_folds, shuffle=True,
         random_state=args.seed + fold_seed_offset + 30,
     )
-    inner_splits = list(inner_skf.split(np.zeros(len(y_train)), y_train))
+    _inner_strat = traindev_stratify_key if traindev_stratify_key is not None else pd.Series(y_train)
+    if traindev_stratify_key is not None:
+        _vc = _inner_strat.value_counts()
+        if (_vc < args.inner_folds).any():
+            logger.warning(
+                f"  [{site_tag}/{clf_type}] classifier_stratify_cols: strata too small "
+                f"(min={int(_vc.min())} < {args.inner_folds} folds). Falling back to label-only."
+            )
+            _inner_strat = pd.Series(y_train)
+    inner_splits = list(inner_skf.split(np.zeros(len(y_train)), _inner_strat))
 
     sampler = optuna.samplers.TPESampler(seed=args.seed + fold_seed_offset)
     study = optuna.create_study(direction="maximize", sampler=sampler)
@@ -827,7 +837,7 @@ def run_loso(
             f"  [{site_tag}] VAE POOL: {len(vae_pool_df)} subjects (all classes)"
         )
 
-        # Save subject lists
+        # Save subject lists (pre-filter; may be overwritten after vae_required_metadata_cols)
         test_df.to_csv(fold_output_dir / "test_subjects.csv", index=False)
         traindev_df.to_csv(fold_output_dir / "train_subjects.csv", index=False)
         vae_pool_df[["SubjectID", "tensor_idx", "ResearchGroup_Mapped"]].to_csv(
@@ -837,25 +847,97 @@ def run_loso(
         np.save(fold_output_dir / "train_tensor_idx.npy", traindev_tensor_idx)
         np.save(fold_output_dir / "vae_pool_tensor_idx.npy", vae_pool_tensor_idx)
 
-        # --- VAE internal train/val split ---
+        # --- vae_required_metadata_cols: drop subjects with missing required columns ---
+        _req_meta = getattr(args, "vae_required_metadata_cols", None) or []
+        _req_meta = [c for c in _req_meta if c]
+        if _req_meta:
+            _missing_any = pd.Series(False, index=vae_pool_df.index)
+            for _col in _req_meta:
+                if _col in vae_pool_df.columns:
+                    _missing_any |= (
+                        vae_pool_df[_col].isna()
+                        | vae_pool_df[_col].astype(str).str.strip().isin(["", "nan", "NaN", "None", "none", "NA", "N/A"])
+                    )
+                else:
+                    logger.warning(f"  [{site_tag}] vae_required_metadata_cols: column {_col!r} not found; skipping.")
+            if _missing_any.any():
+                _n_before = len(vae_pool_df)
+                _removed_sids = vae_pool_df.loc[_missing_any, "SubjectID"].tolist() if "SubjectID" in vae_pool_df.columns else []
+                vae_pool_df = vae_pool_df[~_missing_any].reset_index(drop=True)
+                vae_pool_tensor_idx = vae_pool_df["tensor_idx"].values
+                _n_after = len(vae_pool_df)
+                logger.warning(
+                    f"  [{site_tag}] vae_required_metadata_cols: dropped {_n_before - _n_after} "
+                    f"subjects ({_removed_sids}). Pool: {_n_before} → {_n_after}."
+                )
+                # Overwrite saved pool files with filtered set
+                vae_pool_df[["SubjectID", "tensor_idx", "ResearchGroup_Mapped"]].to_csv(
+                    fold_output_dir / "vae_pool_subjects.csv", index=False
+                )
+                np.save(fold_output_dir / "vae_pool_tensor_idx.npy", vae_pool_tensor_idx)
+            else:
+                logger.info(
+                    f"  [{site_tag}] vae_required_metadata_cols: all {len(vae_pool_df)} "
+                    "VAE pool subjects have required metadata."
+                )
+
+        # --- VAE internal train/val split (cascade: RG+Mfr → RG → unstratified) ---
         pool_n = len(vae_pool_tensor_idx)
         vae_actual_train_idx = np.arange(pool_n, dtype=int)
         vae_val_idx = np.array([], dtype=int)
 
         if args.vae_val_split_ratio > 0 and pool_n > 10:
-            strat_col = vae_pool_df["ResearchGroup_Mapped"].fillna("Unknown").astype(str)
-            try:
-                vae_actual_train_idx, vae_val_idx = sk_train_test_split(
-                    np.arange(pool_n),
-                    test_size=args.vae_val_split_ratio,
-                    stratify=strat_col,
-                    random_state=args.seed + site_num,
-                    shuffle=True,
+            # Build stratification candidates from vae_stratify_cols (default: Manufacturer)
+            _extra_strat = getattr(args, "vae_stratify_cols", None) or []
+            _strat_candidates = []
+            if _extra_strat:
+                _strat_candidates.append(["ResearchGroup_Mapped"] + list(_extra_strat))
+            _strat_candidates.append(["ResearchGroup_Mapped"])
+            _strat_candidates.append([])  # unstratified
+
+            _split_success = False
+            _split_errors = []
+            for _cols in _strat_candidates:
+                try:
+                    if _cols:
+                        _sk = vae_pool_df[_cols[0]].fillna(f"{_cols[0]}_Unknown").astype(str)
+                        for _c in _cols[1:]:
+                            _sk = _sk + "_" + vae_pool_df[_c].fillna(f"{_c}_Unknown").astype(str)
+                        _vc = _sk.value_counts()
+                        if _vc.min() < 2:
+                            _split_errors.append(f"{'+'.join(_cols)}: singleton strata (min={int(_vc.min())})")
+                            continue
+                        _strat_arg = _sk
+                    else:
+                        _strat_arg = None
+                    vae_actual_train_idx, vae_val_idx = sk_train_test_split(
+                        np.arange(pool_n),
+                        test_size=args.vae_val_split_ratio,
+                        stratify=_strat_arg,
+                        random_state=args.seed + site_num,
+                        shuffle=True,
+                    )
+                    vae_actual_train_idx = np.asarray(vae_actual_train_idx, dtype=int)
+                    vae_val_idx = np.asarray(vae_val_idx, dtype=int)
+                    logger.info(
+                        f"  [{site_tag}] VAE val split: train={len(vae_actual_train_idx)}, "
+                        f"val={len(vae_val_idx)}, strat={_cols or 'none'}"
+                    )
+                    _split_success = True
+                    break
+                except ValueError as _e:
+                    _split_errors.append(f"{'+'.join(_cols) or 'unstratified'}: {_e}")
+
+            if not _split_success:
+                _err_msg = (
+                    f"  [{site_tag}] VAE val split failed. Attempts: {' | '.join(_split_errors)}."
                 )
-                vae_actual_train_idx = np.asarray(vae_actual_train_idx, dtype=int)
-                vae_val_idx = np.asarray(vae_val_idx, dtype=int)
-            except ValueError as e:
-                logger.warning(f"  [{site_tag}] VAE val split failed ({e}). Using full pool as train.")
+                if getattr(args, "vae_abort_if_val_split_fails", False):
+                    raise RuntimeError(
+                        _err_msg + " --vae_abort_if_val_split_fails is set. "
+                        "Use --vae_required_metadata_cols to remove problematic subjects."
+                    )
+                logger.warning(_err_msg + " Using full pool as train (no early stopping).")
                 vae_actual_train_idx = np.arange(pool_n, dtype=int)
                 vae_val_idx = np.array([], dtype=int)
 
@@ -1021,6 +1103,22 @@ def run_loso(
         del traindev_norm, test_norm
         gc.collect()
 
+        # --- Build classifier inner-CV stratification key ---
+        _clf_strat_cols = getattr(args, "classifier_stratify_cols", None) or []
+        _clf_strat_key = None
+        if _clf_strat_cols:
+            _traindev_meta = traindev_df.reset_index(drop=True)
+            _base_key = pd.Series(y_train, dtype=str)
+            _extra_keys = []
+            for _sc in _clf_strat_cols:
+                if _sc in _traindev_meta.columns:
+                    _extra_keys.append(_traindev_meta[_sc].fillna(f"{_sc}_Unknown").astype(str))
+                else:
+                    logger.warning(f"  [{site_tag}] classifier_stratify_cols: '{_sc}' not found; skipping.")
+            if _extra_keys:
+                _clf_strat_key = _base_key.str.cat(_extra_keys, sep="_")
+                logger.info(f"  [{site_tag}] Classifier inner-CV stratification: diagnosis + {_clf_strat_cols}")
+
         # --- Train classifiers ---
         for clf_type in args.classifier_types:
             logger.info(f"  [{site_tag}] Training classifier: {clf_type}")
@@ -1034,6 +1132,7 @@ def run_loso(
                     fold_output_dir=fold_output_dir,
                     site_tag=site_tag,
                     fold_seed_offset=site_num,
+                    traindev_stratify_key=_clf_strat_key,
                 )
                 df_preds.insert(1, "classifier_type", clf_type)
                 all_site_metrics.append(metrics)
@@ -1175,6 +1274,15 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--latent_features_type", type=str, default="mu", choices=["mu", "z"])
     p.add_argument("--metadata_features", nargs="*", default=None)
     p.add_argument("--mlp_classifier_hidden_layers", type=str, default="64,16")
+    p.add_argument("--classifier_stratify_cols", type=str, nargs="*", default=None,
+                   help="Additional columns for inner-CV stratification (combined with diagnosis).")
+    p.add_argument("--vae_required_metadata_cols", type=str, nargs="*", default=None,
+                   help="Columns that must be non-null in the VAE pool. "
+                        "Subjects missing any are excluded before the val split.")
+    p.add_argument("--vae_abort_if_val_split_fails", action="store_true",
+                   help="Abort if VAE internal val split fails instead of silently using full pool.")
+    p.add_argument("--vae_stratify_cols", type=str, nargs="*", default=None,
+                   help="Additional columns for VAE val split stratification (prepended by ResearchGroup_Mapped).")
 
     # Misc
     p.add_argument("--norm_mode", type=str, default="zscore_offdiag")

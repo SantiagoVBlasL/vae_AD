@@ -42,6 +42,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import RepeatedStratifiedKFold, StratifiedKFold, train_test_split
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Channel name registry (for pretty printing only)
@@ -119,6 +120,170 @@ def _read_metric(
         return float(df[metric].mean()), float(df[metric].std())
     except Exception:
         return float("nan"), float("nan")
+
+
+def _make_preflight_stratify_key(df: pd.DataFrame, cols: List[str]) -> Tuple[Optional[pd.Series], str]:
+    if not cols:
+        return None, "unstratified"
+    missing = [c for c in cols if c not in df.columns]
+    if missing:
+        return None, f"missing columns: {missing}"
+    tmp = df[cols].copy()
+    for col in cols:
+        tmp[col] = tmp[col].fillna(f"{col}_Unknown").astype(str)
+    key = tmp.apply(lambda r: "_".join(r.values.astype(str)), axis=1)
+    counts = key.value_counts(dropna=False)
+    min_count = int(counts.min()) if len(counts) else 0
+    if min_count < 2:
+        return None, f"singleton strata present (min_count={min_count})"
+    return key, "ok"
+
+
+def _simulate_vae_val_split(
+    vae_pool_df: pd.DataFrame,
+    val_split_ratio: float,
+    seed: int,
+    fold_idx: int,
+) -> Dict:
+    pool_n = len(vae_pool_df)
+    attempts: List[str] = []
+    if val_split_ratio <= 0 or pool_n <= 10:
+        return {
+            "split_mode_used": "disabled",
+            "vae_actual_train_n": pool_n,
+            "vae_internal_val_n": 0,
+            "attempts": "validation split disabled or pool too small",
+            "status": "FAIL",
+        }
+    candidates: List[Tuple[str, List[str]]] = [
+        ("ResearchGroup_Mapped+Manufacturer", ["ResearchGroup_Mapped", "Manufacturer"]),
+        ("ResearchGroup_Mapped", ["ResearchGroup_Mapped"]),
+        ("Manufacturer", ["Manufacturer"]),
+        ("unstratified", []),
+    ]
+    for mode, cols in candidates:
+        strat_key = None
+        if cols:
+            strat_key, reason = _make_preflight_stratify_key(vae_pool_df, cols)
+            if strat_key is None:
+                attempts.append(f"{mode}: skipped ({reason})")
+                continue
+        try:
+            train_idx, val_idx = train_test_split(
+                np.arange(pool_n),
+                test_size=val_split_ratio,
+                stratify=strat_key,
+                random_state=seed + fold_idx + 10,
+                shuffle=True,
+            )
+            attempts.append(f"{mode}: PASS")
+            return {
+                "split_mode_used": mode,
+                "vae_actual_train_n": int(len(train_idx)),
+                "vae_internal_val_n": int(len(val_idx)),
+                "attempts": " | ".join(attempts),
+                "status": "PASS" if len(val_idx) > 0 else "FAIL",
+            }
+        except ValueError as exc:
+            attempts.append(f"{mode}: failed ({exc})")
+    return {
+        "split_mode_used": "",
+        "vae_actual_train_n": pool_n,
+        "vae_internal_val_n": 0,
+        "attempts": " | ".join(attempts),
+        "status": "FAIL",
+    }
+
+
+def run_native_preflight(
+    *,
+    args: argparse.Namespace,
+    candidate_channels: List[int],
+    channel_names: List[str],
+    run_root: Path,
+) -> int:
+    npz = np.load(args.global_tensor_path, allow_pickle=True)
+    tensor_key = "global_tensor_data" if "global_tensor_data" in npz else list(npz.keys())[0]
+    tensor_shape = tuple(npz[tensor_key].shape)
+    metadata = pd.read_csv(args.metadata_path)
+    if "tensor_idx" not in metadata.columns and "tensor_index" in metadata.columns:
+        metadata["tensor_idx"] = metadata["tensor_index"]
+    if "tensor_idx" not in metadata.columns or "ResearchGroup_Mapped" not in metadata.columns:
+        raise RuntimeError("Metadata must include tensor_idx and ResearchGroup_Mapped for FAST dry-run.")
+    max_valid_idx = int(tensor_shape[0] - 1)
+    cn_ad_df = metadata[
+        metadata["ResearchGroup_Mapped"].isin(["CN", "AD"])
+        & (metadata["tensor_idx"] <= max_valid_idx)
+    ].copy()
+    cn_ad_df["label"] = cn_ad_df["ResearchGroup_Mapped"].map({"CN": 0, "AD": 1})
+    strat_cols = ["ResearchGroup_Mapped", "Sex"]
+    for col in strat_cols:
+        if col in cn_ad_df.columns:
+            cn_ad_df[col] = cn_ad_df[col].fillna(f"{col}_Unknown").astype(str)
+    y_outer = cn_ad_df[[c for c in strat_cols if c in cn_ad_df.columns]].apply(
+        lambda r: "_".join(r.astype(str)), axis=1
+    )
+    y_labels = cn_ad_df["label"].values
+    vc = pd.Series(y_outer).value_counts()
+    if (vc < args.outer_folds).any():
+        y_outer = y_labels
+
+    if args.repeats > 1:
+        outer_cv = RepeatedStratifiedKFold(
+            n_splits=args.outer_folds,
+            n_repeats=args.repeats,
+            random_state=args.seed,
+        )
+        total_outer = args.outer_folds * args.repeats
+    else:
+        outer_cv = StratifiedKFold(n_splits=args.outer_folds, shuffle=True, random_state=args.seed)
+        total_outer = args.outer_folds
+
+    all_valid = metadata.loc[metadata["tensor_idx"] <= max_valid_idx, "tensor_idx"].astype(int).to_numpy()
+    meta_by_tensor = metadata.set_index("tensor_idx", drop=False)
+    rows = []
+    for fold_idx, (_, test_local) in enumerate(outer_cv.split(np.arange(len(cn_ad_df)), y_outer)):
+        test_global = cn_ad_df.iloc[test_local]["tensor_idx"].astype(int).to_numpy()
+        vae_pool_global = np.setdiff1d(np.unique(all_valid), np.unique(test_global), assume_unique=False)
+        vae_pool_df = meta_by_tensor.loc[vae_pool_global].reset_index(drop=True)
+        split = _simulate_vae_val_split(
+            vae_pool_df,
+            args.vae_val_split_ratio,
+            args.seed,
+            fold_idx,
+        )
+        counts = vae_pool_df["ResearchGroup_Mapped"].value_counts(dropna=False).to_dict()
+        rows.append({
+            "fold": fold_idx + 1,
+            "total_outer_folds": total_outer,
+            "candidate_channels": " ".join(map(str, candidate_channels)),
+            "candidate_channel_names": ";".join(channel_names[c] for c in candidate_channels),
+            "classifier_test_n": int(len(test_local)),
+            "classifier_test_CN": int((cn_ad_df.iloc[test_local]["ResearchGroup_Mapped"] == "CN").sum()),
+            "classifier_test_AD": int((cn_ad_df.iloc[test_local]["ResearchGroup_Mapped"] == "AD").sum()),
+            "vae_pool_n": int(len(vae_pool_df)),
+            "vae_pool_CN": int(counts.get("CN", 0)),
+            "vae_pool_MCI": int(counts.get("MCI", 0)),
+            "vae_pool_AD": int(counts.get("AD", 0)),
+            **split,
+            "unsafe_full_train_fallback": split["vae_internal_val_n"] == 0,
+        })
+    df = pd.DataFrame(rows)
+    run_root.mkdir(parents=True, exist_ok=True)
+    out_csv = run_root / "native_fast_dryrun_valsplit_preflight.csv"
+    df.to_csv(out_csv, index=False)
+    print("========== FAST native dry-run / preflight ==========")
+    print(f"Tensor shape: {tensor_shape}")
+    print(f"Metadata N: {len(metadata)}")
+    print(f"CN/AD subjects: {len(cn_ad_df)} | CN={(cn_ad_df['label'] == 0).sum()}, AD={(cn_ad_df['label'] == 1).sum()}")
+    print(f"Candidate channels: {_pretty_channels(candidate_channels, channel_names)}")
+    print(df.to_string(index=False))
+    print(f"[OK] Wrote preflight CSV: {out_csv}")
+    if not (df["status"] == "PASS").all() or (df["vae_internal_val_n"] <= 0).any():
+        print("[FAIL] At least one outer fold has unsafe VAE validation split.")
+        return 1
+    print("[PASS] All outer folds have nonzero VAE internal validation splits.")
+    return 0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -214,6 +379,12 @@ def _run_ablation_once(
         cmd.append("--save_fold_artefacts")
     if cfg.get("save_vae_training_history", False):
         cmd.append("--save_vae_training_history")
+    if cfg.get("vae_abort_if_val_split_fails", False):
+        cmd.append("--vae_abort_if_val_split_fails")
+    if cfg.get("strict_metadata_intersection", True):
+        cmd.append("--strict_metadata_intersection")
+    else:
+        cmd.append("--no-strict_metadata_intersection")
 
     # ── Execute ────────────────────────────────────────────────────────────────
     rc = _run_cmd(cmd)
@@ -418,6 +589,17 @@ def main() -> None:
                    help="Pass --save_fold_artefacts to ablation script.")
     p.add_argument("--save_vae_training_history", action="store_true",
                    help="Pass --save_vae_training_history to ablation script.")
+    p.add_argument("--vae_abort_if_val_split_fails", action="store_true",
+                   help="Pass strict VAE validation split/checkpoint guard to ablation script.")
+    p.add_argument(
+        "--strict_metadata_intersection",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Restrict FAST runtime to tensor subjects present in the source metadata CSV.",
+    )
+    p.add_argument("--dry-run", "--preflight-only", action="store_true",
+                   dest="dry_run",
+                   help="Native FAST preflight: simulate outer-fold VAE train/val splits without training.")
 
     args = p.parse_args()
 
@@ -469,6 +651,8 @@ def main() -> None:
         "classifier_use_class_weight": args.classifier_use_class_weight,
         "save_fold_artefacts":         args.save_fold_artefacts,
         "save_vae_training_history":   args.save_vae_training_history,
+        "vae_abort_if_val_split_fails": args.vae_abort_if_val_split_fails,
+        "strict_metadata_intersection": args.strict_metadata_intersection,
     }
 
     print("\n========== Channel Ablation ==========")
@@ -481,6 +665,15 @@ def main() -> None:
     print(f"[INVARIANT] Classifier: logreg (no HP tuning, no SMOTE)")
     print(f"[PARITY]    --vae_final_activation tanh  --metadata_features Age Sex")
     print("======================================\n")
+
+    if args.dry_run:
+        rc = run_native_preflight(
+            args=args,
+            candidate_channels=candidate_channels,
+            channel_names=channel_names,
+            run_root=run_root,
+        )
+        raise SystemExit(rc)
 
     t0 = time.time()
     results = greedy_ablation(

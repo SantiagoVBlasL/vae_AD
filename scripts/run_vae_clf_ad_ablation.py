@@ -130,6 +130,130 @@ def _filter_existing_cols(df: Optional[pd.DataFrame], cols: List[str]) -> List[s
     return [c for c in cols if c in df.columns]
 
 
+def _make_vae_val_stratify_key(
+    df: pd.DataFrame,
+    candidate_cols: List[str],
+) -> Tuple[Optional[pd.Series], str]:
+    """Build a validated VAE validation stratification key."""
+    if not candidate_cols:
+        return None, "unstratified"
+    missing = [c for c in candidate_cols if c not in df.columns]
+    if missing:
+        return None, f"missing columns: {missing}"
+    tmp = df[candidate_cols].copy()
+    for col in candidate_cols:
+        tmp[col] = tmp[col].fillna(f"{col}_Unknown").astype(str)
+    key = tmp.apply(lambda r: "_".join(r.values.astype(str)), axis=1)
+    counts = key.value_counts(dropna=False)
+    min_count = int(counts.min()) if len(counts) else 0
+    if min_count < 2:
+        return None, f"singleton strata present (min_count={min_count})"
+    return key, "ok"
+
+
+def make_safe_vae_val_split(
+    *,
+    vae_pool_df: pd.DataFrame,
+    val_split_ratio: float,
+    seed: int,
+    fold_idx: int,
+    fold_tag: str,
+    abort_if_fails: bool,
+) -> Tuple[np.ndarray, np.ndarray, str, List[str]]:
+    """Create VAE train/validation indices using strict ordered fallbacks."""
+    pool_n = len(vae_pool_df)
+    if val_split_ratio <= 0 or pool_n <= 10:
+        if abort_if_fails:
+            raise RuntimeError(
+                f"{fold_tag} VAE internal validation split is disabled or impossible "
+                f"(ratio={val_split_ratio}, pool_n={pool_n}) while strict abort is set."
+            )
+        return np.arange(pool_n, dtype=int), np.array([], dtype=int), "disabled", []
+
+    candidates: List[Tuple[str, List[str]]] = [
+        ("ResearchGroup_Mapped+Manufacturer", ["ResearchGroup_Mapped", "Manufacturer"]),
+        ("ResearchGroup_Mapped", ["ResearchGroup_Mapped"]),
+        ("Manufacturer", ["Manufacturer"]),
+        ("unstratified", []),
+    ]
+    attempts: List[str] = []
+    for split_mode, cols in candidates:
+        strat_key = None
+        if cols:
+            strat_key, reason = _make_vae_val_stratify_key(vae_pool_df, cols)
+            if strat_key is None:
+                msg = f"{split_mode} skipped ({reason})"
+                attempts.append(msg)
+                logger.warning(f"  {fold_tag} VAE val split fallback: {msg}.")
+                continue
+        try:
+            tr_idx, val_idx = sk_train_test_split(
+                np.arange(pool_n),
+                test_size=val_split_ratio,
+                stratify=strat_key,
+                random_state=seed + fold_idx + 10,
+                shuffle=True,
+            )
+            tr_idx = np.asarray(tr_idx, dtype=int)
+            val_idx = np.asarray(val_idx, dtype=int)
+            logger.info(f"  {fold_tag} VAE val split mode used: {split_mode}")
+            attempts.append(f"{split_mode}: PASS")
+            return tr_idx, val_idx, split_mode, attempts
+        except ValueError as exc:
+            msg = f"{split_mode} failed ({exc})"
+            attempts.append(msg)
+            logger.warning(f"  {fold_tag} VAE val split fallback: {msg}.")
+
+    if abort_if_fails:
+        raise RuntimeError(
+            f"{fold_tag} VAE internal validation split failed and "
+            f"--vae_abort_if_val_split_fails is set. Attempts: {' | '.join(attempts)}"
+        )
+    logger.error(
+        f"  {fold_tag} VAE val split failed. Attempts: {' | '.join(attempts)}. "
+        "Using full pool as train."
+    )
+    return np.arange(pool_n, dtype=int), np.array([], dtype=int), "full_train_unsafe", attempts
+
+
+def enforce_metadata_intersection(
+    metadata_df: pd.DataFrame,
+    metadata_path: Path,
+    output_dir: Path,
+    *,
+    strict: bool,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Drop tensor rows that are absent from the source metadata CSV.
+
+    load_data() aligns by preserving every tensor row. For final-cohort FAST
+    supplement runs the cohort is defined as the metadata-valid tensor
+    intersection, so tensor-only rows must never enter the VAE pool.
+    """
+    if not strict:
+        return metadata_df, pd.DataFrame()
+    if "SubjectID" not in metadata_df.columns:
+        raise RuntimeError("--strict_metadata_intersection requires SubjectID after load_data().")
+    raw_meta = pd.read_csv(metadata_path)
+    if "SubjectID" not in raw_meta.columns:
+        raise RuntimeError("--strict_metadata_intersection requires SubjectID in metadata CSV.")
+    valid_subjects = set(raw_meta["SubjectID"].astype(str).str.strip())
+    loaded = metadata_df.copy()
+    loaded["SubjectID"] = loaded["SubjectID"].astype(str).str.strip()
+    missing_mask = ~loaded["SubjectID"].isin(valid_subjects)
+    excluded = loaded.loc[missing_mask, ["SubjectID", "tensor_idx"]].copy()
+    if not excluded.empty:
+        excluded["exclusion_reason"] = "tensor_subject_absent_from_metadata_csv"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        excluded.to_csv(output_dir / "strict_metadata_intersection_excluded_tensor_only_subjects.csv", index=False)
+        logger.warning(
+            "Strict metadata intersection excluded %d tensor-only subject(s): %s",
+            len(excluded),
+            excluded["SubjectID"].astype(str).tolist(),
+        )
+    filtered = loaded.loc[~missing_mask].copy().reset_index(drop=True)
+    return filtered, excluded
+
+
 def _get_score_1d(estimator, X) -> np.ndarray:
     """Return a 1-D probability / decision score suitable for AUC."""
     if hasattr(estimator, "predict_proba"):
@@ -355,59 +479,28 @@ def train_and_evaluate_pipeline(
         log_group_distributions(vae_pool_df, cols_pool, "VAE Training Pool", fold_tag)
         vae_pool_tensor_orig = current_tensor[vae_pool_global]
 
-        # ── VAE internal val split (stratified; robust fallback) ──────────────
+        # ── VAE internal val split (strict ordered fallbacks) ────────────────
         pool_n    = len(vae_pool_global)
         vae_tr_idx  = np.arange(pool_n, dtype=int)
         vae_val_idx = np.array([], dtype=int)
+        vae_val_split_mode = "disabled"
+        vae_val_split_attempts: List[str] = []
 
         if args.vae_val_split_ratio > 0 and pool_n > 10:
-            vae_strat_cands = ["ResearchGroup_Mapped", "Sex", "Age_Group"]
-            avail = [c for c in vae_strat_cands if c in vae_pool_df.columns]
-            if not avail:
-                avail = ["ResearchGroup_Mapped"]
+            vae_tr_idx, vae_val_idx, vae_val_split_mode, vae_val_split_attempts = make_safe_vae_val_split(
+                vae_pool_df=vae_pool_df,
+                val_split_ratio=args.vae_val_split_ratio,
+                seed=args.seed,
+                fold_idx=fold_idx,
+                fold_tag=fold_tag,
+                abort_if_fails=args.vae_abort_if_val_split_fails,
+            )
 
-            tmp_st = vae_pool_df[avail].copy()
-            for col in avail:
-                tmp_st[col] = tmp_st[col].fillna(f"{col}_Unknown").astype(str)
-
-            try:
-                strat_key = tmp_st.apply(
-                    lambda r: "_".join(r.values.astype(str)), axis=1
-                )
-                if not all(strat_key.value_counts() >= 2):
-                    logger.warning(
-                        f"  {fold_tag} VAE val strata too small with {avail}. "
-                        "Falling back to ResearchGroup_Mapped."
-                    )
-                    strat_key = (
-                        vae_pool_df["ResearchGroup_Mapped"].fillna("RG_Unknown").astype(str)
-                    )
-                logger.info(f"  {fold_tag} VAE val split stratified by: {avail}")
-            except Exception as exc:
-                logger.error(
-                    f"  {fold_tag} VAE val strat key failed ({exc}). "
-                    "Using ResearchGroup_Mapped."
-                )
-                strat_key = (
-                    vae_pool_df["ResearchGroup_Mapped"].fillna("RG_Unknown").astype(str)
-                )
-
-            try:
-                vae_tr_idx, vae_val_idx = sk_train_test_split(
-                    np.arange(pool_n),
-                    test_size=args.vae_val_split_ratio,
-                    stratify=strat_key,
-                    random_state=args.seed + fold_idx + 10,
-                    shuffle=True,
-                )
-                vae_tr_idx  = np.asarray(vae_tr_idx,  dtype=int)
-                vae_val_idx = np.asarray(vae_val_idx, dtype=int)
-            except ValueError as exc:
-                logger.error(
-                    f"  {fold_tag} VAE val split failed ({exc}). Using full pool as train."
-                )
-                vae_tr_idx  = np.arange(pool_n, dtype=int)
-                vae_val_idx = np.array([], dtype=int)
+        if len(vae_val_idx) == 0 and args.vae_abort_if_val_split_fails:
+            raise RuntimeError(
+                f"{fold_tag} VAE internal validation split produced val N=0 "
+                "while --vae_abort_if_val_split_fails is set."
+            )
 
         # Save VAE split artifacts
         try:
@@ -429,7 +522,8 @@ def train_and_evaluate_pipeline(
                 vae_pool_df.iloc[vae_val_idx], cols_vae_log, "VAE internal val", fold_tag
             )
         logger.info(
-            f"  {fold_tag} VAE train: {len(vae_tr_idx)}, VAE val: {len(vae_val_idx)}"
+            f"  {fold_tag} VAE train: {len(vae_tr_idx)}, VAE val: {len(vae_val_idx)} "
+            f"(split_mode={vae_val_split_mode})"
         )
 
         # ── Normalization (parity with inference) ──────────────────────────────
@@ -642,6 +736,36 @@ def train_and_evaluate_pipeline(
 
             if (epoch + 1) % args.log_interval_epochs_vae == 0 or epoch == args.epochs_vae - 1:
                 logger.info(log_msg)
+
+        # ── Numerical/checkpoint guardrails for supplementary FAST runs ──────
+        val_modelsel = np.asarray(history_data.get("val_loss_modelsel", []), dtype=float)
+        if len(val_modelsel) == 0 or np.isnan(val_modelsel).any():
+            msg = (
+                f"{fold_tag} val_loss_modelsel contains NaN or is empty "
+                f"(n={len(val_modelsel)}, n_nan={int(np.isnan(val_modelsel).sum()) if len(val_modelsel) else 0})."
+            )
+            if args.vae_abort_if_val_split_fails:
+                raise RuntimeError(msg)
+            logger.warning(msg)
+        if best_epoch > 0 and history_data.get("beta"):
+            best_beta = float(history_data["beta"][best_epoch - 1])
+            min_beta_for_checkpoint = 0.95 * float(args.beta_vae)
+            if best_beta < min_beta_for_checkpoint:
+                msg = (
+                    f"{fold_tag} best checkpoint epoch {best_epoch} has beta={best_beta:.4f}, "
+                    f"below 0.95*beta_max={min_beta_for_checkpoint:.4f}."
+                )
+                if args.vae_abort_if_val_split_fails:
+                    raise RuntimeError(msg)
+                logger.warning(msg)
+        if history_data.get("val_kld") and history_data.get("train_kld"):
+            beta_arr = np.asarray(history_data.get("beta", []), dtype=float)
+            peak_mask = beta_arr >= (0.95 * float(args.beta_vae))
+            if peak_mask.any():
+                train_kld_peak = np.asarray(history_data["train_kld"], dtype=float)[peak_mask]
+                val_kld_peak = np.asarray(history_data["val_kld"], dtype=float)[peak_mask]
+                ratio = np.nanmedian(val_kld_peak / np.maximum(train_kld_peak, 1e-12))
+                logger.info(f"  {fold_tag} beta-peak median val_kld/train_kld={ratio:.4f}")
 
         # ── Load best VAE checkpoint ───────────────────────────────────────────
         if best_state:
@@ -1018,6 +1142,15 @@ if __name__ == "__main__":
     g.add_argument("--dropout_rate_vae", type=float, default=0.2)
     g.add_argument("--use_layernorm_vae_fc", action="store_true")
     g.add_argument("--vae_val_split_ratio", type=float, default=0.2)
+    g.add_argument(
+        "--vae_abort_if_val_split_fails",
+        action="store_true",
+        default=False,
+        help=(
+            "Abort when the VAE internal validation split cannot be created or when "
+            "validation/checkpoint guardrails fail. Recommended for supplementary FAST evidence."
+        ),
+    )
     g.add_argument("--early_stopping_patience_vae", type=int, default=20)
     g.add_argument("--lr_scheduler_patience_vae", type=int, default=15)
     g.add_argument("--lr_scheduler_type", type=str, default="plateau",
@@ -1048,6 +1181,15 @@ if __name__ == "__main__":
                    help="Save LogReg pipeline per fold.")
     g.add_argument("--save_vae_training_history", action="store_true",
                    help="Save VAE training history (loss, beta) per fold.")
+    g.add_argument(
+        "--strict_metadata_intersection",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Restrict all pools to subjects present in both tensor and source metadata CSV. "
+            "Default True for FAST final-cohort/supplement runs."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -1107,6 +1249,19 @@ if __name__ == "__main__":
     if global_tensor is None or metadata_df is None:
         logger.critical("Data loading failed. Aborting.")
         sys.exit(1)
+
+    metadata_df, excluded_tensor_only = enforce_metadata_intersection(
+        metadata_df,
+        Path(args.metadata_path),
+        Path(args.output_dir),
+        strict=bool(args.strict_metadata_intersection),
+    )
+    if args.strict_metadata_intersection:
+        logger.info(
+            "Strict metadata intersection active: metadata-valid tensor rows N=%d, excluded tensor-only N=%d.",
+            len(metadata_df),
+            len(excluded_tensor_only),
+        )
 
     # ✅ channel names (desde el .npz, o fallback)
     try:

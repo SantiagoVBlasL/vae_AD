@@ -91,6 +91,13 @@ def parse_args() -> argparse.Namespace:
         default=CLASSIFIERS,
         help="Classifier-only readout models to run.",
     )
+    parser.add_argument(
+        "--readout-feature-sets",
+        nargs="+",
+        choices=["z_only", "z_plus_sex", "z_plus_age_sex"],
+        default=["z_plus_age_sex"],
+        help="Feature sets to evaluate from saved latent mu. z_only excludes Age/Sex; z_plus_sex adds Sex; z_plus_age_sex preserves current behavior.",
+    )
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--reuse-latent-cache", action="store_true")
     return parser.parse_args()
@@ -159,6 +166,16 @@ def load_config(run_dir: Path) -> Dict[str, Any]:
         "selected_channel_names": list(cfg.get("channel_names_selected") or args.get("selected_channel_names") or []),
         "latent_dim": int(args.get("latent_dim", 256)),
         "dropout_rate_vae": float(args.get("dropout_rate_vae", 0.15)),
+        "encoder_dropout_rate_vae": (
+            None
+            if args.get("encoder_dropout_rate_vae", None) is None
+            else float(args.get("encoder_dropout_rate_vae"))
+        ),
+        "decoder_dropout_rate_vae": (
+            None
+            if args.get("decoder_dropout_rate_vae", None) is None
+            else float(args.get("decoder_dropout_rate_vae"))
+        ),
         "vae_final_activation": str(args.get("vae_final_activation", "tanh")),
         "intermediate_fc_dim_vae": args.get("intermediate_fc_dim_vae", "quarter"),
         "use_layernorm_vae_fc": bool(args.get("use_layernorm_vae_fc", False)),
@@ -167,6 +184,8 @@ def load_config(run_dir: Path) -> Dict[str, Any]:
         "encoder_norm_mode": str(args.get("encoder_norm_mode", "groupnorm")),
         "vae_dropout_scope": str(args.get("vae_dropout_scope", "legacy_all")),
         "vae_block_order": str(args.get("vae_block_order", "legacy_act_norm")),
+        "vae_conditioning_mode": str(args.get("vae_conditioning_mode", "none")),
+        "vae_conditioning_vars": str(args.get("vae_conditioning_vars", "none")),
         "metadata_features": list(args.get("metadata_features") or ["Age", "Sex"]),
         "classifier_stratify_cols": list(args.get("classifier_stratify_cols") or ["Manufacturer"]),
         "outer_folds": int(args.get("outer_folds", 5)),
@@ -179,8 +198,29 @@ def load_config(run_dir: Path) -> Dict[str, Any]:
 def load_selected_tensor(tensor_path: Path, channels: Sequence[int]) -> Dict[str, Any]:
     with np.load(tensor_path, allow_pickle=False) as zf:
         tensor = np.asarray(zf["global_tensor_data"][:, list(channels), :, :], dtype=np.float32)
-        subject_ids = np.asarray(zf["subject_ids"]).astype(str) if "subject_ids" in zf.files else None
-        channel_names = np.asarray(zf["channel_names"]).astype(str).tolist() if "channel_names" in zf.files else []
+        files = set(zf.files)
+        subject_ids = None
+        channel_names: List[str] = []
+        try:
+            subject_ids = np.asarray(zf["subject_ids"]).astype(str) if "subject_ids" in files else None
+            channel_names = np.asarray(zf["channel_names"]).astype(str).tolist() if "channel_names" in files else []
+        except ValueError as exc:
+            if "Object arrays cannot be loaded when allow_pickle=False" not in str(exc):
+                raise
+            # Some locally generated exploratory tensors store string metadata
+            # as object arrays. Keep tensor loading non-pickle, then narrowly
+            # reopen for string metadata and coerce to str.
+            with np.load(tensor_path, allow_pickle=True) as zf_pickle:
+                subject_ids = (
+                    np.asarray(zf_pickle["subject_ids"], dtype=object).astype(str)
+                    if "subject_ids" in files
+                    else None
+                )
+                channel_names = (
+                    np.asarray(zf_pickle["channel_names"], dtype=object).astype(str).tolist()
+                    if "channel_names" in files
+                    else []
+                )
         python_bandpass_applied = bool(zf["python_bandpass_applied"]) if "python_bandpass_applied" in zf.files else None
     return {
         "tensor": tensor,
@@ -203,7 +243,21 @@ def normalize_metadata(meta: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def make_model(cfg: Dict[str, Any], image_size: int, n_channels: int, device: torch.device) -> ConvolutionalVAE:
+def make_model(
+    cfg: Dict[str, Any],
+    image_size: int,
+    n_channels: int,
+    device: torch.device,
+    conditioning_dim_override: Optional[int] = None,
+) -> ConvolutionalVAE:
+    conditioning_vars = str(cfg.get("vae_conditioning_vars", "none"))
+    conditioning_dim = 0
+    if str(cfg.get("vae_conditioning_mode", "none")) != "none":
+        if conditioning_dim_override is not None:
+            conditioning_dim = int(conditioning_dim_override)
+        else:
+            conditioning_vars_norm = "age" if conditioning_vars.lower() == "age" else conditioning_vars
+            conditioning_dim = 1 if conditioning_vars_norm in {"age", "sex"} else 2 if conditioning_vars_norm == "age_sex" else 3 if conditioning_vars_norm == "manufacturer" else 0
     model = ConvolutionalVAE(
         input_channels=n_channels,
         latent_dim=int(cfg["latent_dim"]),
@@ -211,24 +265,94 @@ def make_model(cfg: Dict[str, Any], image_size: int, n_channels: int, device: to
         final_activation=str(cfg["vae_final_activation"]),
         intermediate_fc_dim_config=cfg["intermediate_fc_dim_vae"],
         dropout_rate=float(cfg["dropout_rate_vae"]),
+        encoder_dropout_rate=cfg.get("encoder_dropout_rate_vae"),
+        decoder_dropout_rate=cfg.get("decoder_dropout_rate_vae"),
         use_layernorm_fc=bool(cfg["use_layernorm_vae_fc"]),
         num_conv_layers_encoder=int(cfg["num_conv_layers_encoder"]),
         decoder_type=str(cfg["decoder_type"]),
         encoder_norm_mode=str(cfg.get("encoder_norm_mode", "groupnorm")),
         dropout_scope=str(cfg.get("vae_dropout_scope", "legacy_all")),
         block_order=str(cfg.get("vae_block_order", "legacy_act_norm")),
+        conditioning_mode=str(cfg.get("vae_conditioning_mode", "none")),
+        conditioning_dim=conditioning_dim,
     )
     model.to(device)
     model.eval()
     return model
 
 
-def encode_mu(model: ConvolutionalVAE, tensor: np.ndarray, batch_size: int, device: torch.device) -> np.ndarray:
+def apply_conditioning_transformer(rows: pd.DataFrame, transformer: Dict[str, Any]) -> np.ndarray:
+    vars_mode = str(transformer.get("vars_mode", "none"))
+    if vars_mode.lower() == "age":
+        vars_mode = "age"
+    if vars_mode == "none":
+        return np.zeros((len(rows), 0), dtype=np.float32)
+    cols: List[np.ndarray] = []
+    if vars_mode in {"age", "age_sex"}:
+        age = pd.to_numeric(rows["Age"], errors="coerce")
+        if age.isna().any():
+            bad = rows.loc[age.isna(), ["SubjectID", "Age"]].head(10).to_dict("records")
+            raise ValueError(f"VAE conditioning Age has missing/non-numeric values: {bad}")
+        cols.append(((age.astype(float) - float(transformer["age_mean"])) / float(transformer["age_std"])).to_numpy(dtype=np.float32))
+    if vars_mode in {"sex", "age_sex"}:
+        cols.append(rows["Sex"].astype(str).map(dict(transformer["sex_mapping"])).to_numpy(dtype=np.float32))
+    if vars_mode == "manufacturer":
+        categories = list(transformer.get("manufacturer_categories", []))
+        mapping = dict(transformer.get("manufacturer_mapping", {}))
+        if not categories:
+            raise ValueError("Manufacturer conditioning transformer has no categories.")
+        values = (
+            rows["Manufacturer"]
+            .astype("string")
+            .str.strip()
+            .str.replace(r"[_\\-]+", " ", regex=True)
+            .str.replace(r"\\s+", " ", regex=True)
+            .str.upper()
+        )
+        normalize = {
+            "GE": "GE",
+            "G E": "GE",
+            "GENERAL ELECTRIC": "GE",
+            "GE MEDICAL SYSTEMS": "GE",
+            "PHILIPS": "PHILIPS",
+            "PHILIPS MEDICAL SYSTEMS": "PHILIPS",
+            "PHILIPS HEALTHCARE": "PHILIPS",
+            "SIEMENS": "SIEMENS",
+            "SIEMENS HEALTHCARE": "SIEMENS",
+            "SIEMENS HEALTHINEERS": "SIEMENS",
+            "SIEMENS MEDICAL SYSTEMS": "SIEMENS",
+        }
+        normalized = values.map(normalize)
+        if normalized.isna().any() or (~normalized.isin(categories)).any():
+            bad_mask = normalized.isna() | (~normalized.isin(categories))
+            bad = rows.loc[bad_mask, ["SubjectID", "Manufacturer"]].head(10).to_dict("records")
+            raise ValueError(f"Unsupported/unseen Manufacturer for VAE conditioning categories {categories}: {bad}")
+        onehot = np.zeros((len(rows), len(categories)), dtype=np.float32)
+        codes = normalized.map(mapping).to_numpy(dtype=int)
+        onehot[np.arange(len(rows)), codes] = 1.0
+        cols.append(onehot)
+    cols_2d = [c[:, None] if c.ndim == 1 else c for c in cols]
+    return np.concatenate(cols_2d, axis=1).astype(np.float32)
+
+
+def encode_mu(
+    model: ConvolutionalVAE,
+    tensor: np.ndarray,
+    batch_size: int,
+    device: torch.device,
+    condition: Optional[np.ndarray] = None,
+) -> np.ndarray:
     chunks: List[np.ndarray] = []
     with torch.no_grad():
         for start in range(0, tensor.shape[0], batch_size):
             x = torch.from_numpy(tensor[start : start + batch_size]).float().to(device)
-            mu, _logvar = model.encode(x)
+            cond_batch = None
+            if condition is not None and condition.shape[1] > 0:
+                cond_batch = torch.from_numpy(condition[start : start + batch_size]).float().to(device)
+            if getattr(model, "conditioning_mode", "none") == "none":
+                mu, _logvar = model.encode(x)
+            else:
+                recon_x, mu, _logvar, _z = model(x, condition=cond_batch)
             chunks.append(mu.detach().cpu().numpy())
     return np.concatenate(chunks, axis=0)
 
@@ -316,7 +440,12 @@ def build_or_load_latent_cache(
         "num_conv_layers_encoder": int(cfg["num_conv_layers_encoder"]),
         "encoder_norm_mode": str(cfg.get("encoder_norm_mode", "groupnorm")),
         "vae_dropout_scope": str(cfg.get("vae_dropout_scope", "legacy_all")),
+        "dropout_rate_vae": float(cfg.get("dropout_rate_vae", 0.15)),
+        "encoder_dropout_rate_vae": cfg.get("encoder_dropout_rate_vae"),
+        "decoder_dropout_rate_vae": cfg.get("decoder_dropout_rate_vae"),
         "vae_block_order": str(cfg.get("vae_block_order", "legacy_act_norm")),
+        "vae_conditioning_mode": str(cfg.get("vae_conditioning_mode", "none")),
+        "vae_conditioning_vars": str(cfg.get("vae_conditioning_vars", "none")),
         "outer_folds": outer_folds,
         "inner_folds": int(cfg.get("inner_folds", 5)),
         "folds_to_run": folds_to_run,
@@ -331,21 +460,43 @@ def build_or_load_latent_cache(
         test_subjects_path = fold_dir / "test_subjects_fold.csv"
         norm_path = fold_dir / "vae_norm_params.joblib"
         checkpoint_path = fold_dir / f"vae_model_fold_{fold}.pt"
-        require_files([train_subjects_path, test_subjects_path, norm_path, checkpoint_path])
+        conditioning_path = fold_dir / "vae_conditioning_transformer.joblib"
+        required_paths = [train_subjects_path, test_subjects_path, norm_path, checkpoint_path]
+        if str(cfg.get("vae_conditioning_mode", "none")) != "none":
+            required_paths.append(conditioning_path)
+        require_files(required_paths)
         train_subjects = pd.read_csv(train_subjects_path)
         test_subjects = pd.read_csv(test_subjects_path)
         norm_params = joblib.load(norm_path)
+        conditioning_transformer = (
+            joblib.load(conditioning_path)
+            if str(cfg.get("vae_conditioning_mode", "none")) != "none"
+            else {"vars_mode": "none", "conditioning_dim": 0}
+        )
 
-        model = make_model(cfg, image_size=tensor.shape[-1], n_channels=tensor.shape[1], device=device)
+        model = make_model(
+            cfg,
+            image_size=tensor.shape[-1],
+            n_channels=tensor.shape[1],
+            device=device,
+            conditioning_dim_override=int(conditioning_transformer.get("conditioning_dim", 0)),
+        )
         state_dict = torch.load(checkpoint_path, map_location=device)
         model.load_state_dict(state_dict)
         model.eval()
 
-        fold_info = {"fold": fold, "checkpoint": str(checkpoint_path), "normalization_params": str(norm_path)}
+        fold_info = {
+            "fold": fold,
+            "checkpoint": str(checkpoint_path),
+            "normalization_params": str(norm_path),
+            "conditioning_transformer": str(conditioning_path) if conditioning_path.exists() else "",
+        }
         for split, subjects in [("trainDev", train_subjects), ("test", test_subjects)]:
             idx = subjects["tensor_idx"].astype(int).to_numpy()
             x_norm = apply_normalization_params(tensor[idx], norm_params)
-            mu = encode_mu(model, x_norm, batch_size=batch_size, device=device)
+            merged_subjects = merge_subject_metadata(subjects, metadata)
+            cond = apply_conditioning_transformer(merged_subjects, conditioning_transformer)
+            mu = encode_mu(model, x_norm, batch_size=batch_size, device=device, condition=cond)
             frame = subject_latent_frame(subjects, metadata, mu, fold, split)
             path = cache_dir / f"fold_{fold}_{split}_latent_mu.csv"
             frame.to_csv(path, index=False)
@@ -366,19 +517,18 @@ def make_ohe() -> OneHotEncoder:
         return OneHotEncoder(handle_unknown="ignore", sparse=False)
 
 
-def make_preprocessor(mu_cols: List[str]) -> ColumnTransformer:
+def make_preprocessor(mu_cols: List[str], readout_feature_set: str = "z_plus_age_sex") -> ColumnTransformer:
     numeric_latent = Pipeline([("scaler", StandardScaler())])
-    numeric_age = Pipeline([("imputer", SimpleImputer(strategy="median")), ("scaler", StandardScaler())])
+    transformers: List[Tuple[str, Pipeline, List[str]]] = [("latent", numeric_latent, mu_cols)]
     categorical = Pipeline([("imputer", SimpleImputer(strategy="most_frequent")), ("onehot", make_ohe())])
-    return ColumnTransformer(
-        [
-            ("latent", numeric_latent, mu_cols),
-            ("age", numeric_age, ["Age"]),
-            ("sex", categorical, ["Sex"]),
-        ],
-        remainder="drop",
-        sparse_threshold=0.0,
-    )
+    if readout_feature_set == "z_plus_sex":
+        transformers.append(("sex", categorical, ["Sex"]))
+    elif readout_feature_set == "z_plus_age_sex":
+        numeric_age = Pipeline([("imputer", SimpleImputer(strategy="median")), ("scaler", StandardScaler())])
+        transformers.extend([("age", numeric_age, ["Age"]), ("sex", categorical, ["Sex"])])
+    elif readout_feature_set != "z_only":
+        raise ValueError(f"Unsupported readout_feature_set={readout_feature_set!r}")
+    return ColumnTransformer(transformers, remainder="drop", sparse_threshold=0.0)
 
 
 def classifier_specs(seed: int, y_train: np.ndarray) -> Dict[str, Tuple[Pipeline, Dict[str, List[Any]], str]]:
@@ -657,7 +807,14 @@ def original_predictions(run_dir: Path) -> pd.DataFrame:
     return df
 
 
-def run_sweep(run_dir: Path, outdir: Path, cfg: Dict[str, Any], n_jobs: int, models: Sequence[str]) -> Dict[str, pd.DataFrame]:
+def run_sweep(
+    run_dir: Path,
+    outdir: Path,
+    cfg: Dict[str, Any],
+    n_jobs: int,
+    models: Sequence[str],
+    readout_feature_sets: Sequence[str],
+) -> Dict[str, pd.DataFrame]:
     cache_dir = outdir / "latent_cache"
     fold_metric_rows: List[Dict[str, Any]] = []
     pred_rows: List[pd.DataFrame] = []
@@ -672,99 +829,112 @@ def run_sweep(run_dir: Path, outdir: Path, cfg: Dict[str, Any], n_jobs: int, mod
     for fold in folds_to_run:
         train_df, test_df = load_latent_pair(cache_dir, fold)
         mu_cols = [c for c in train_df.columns if c.startswith("mu_")]
-        feature_cols = mu_cols + ["Age", "Sex"]
-        x_train = train_df[feature_cols].copy()
         y_train = train_df["y"].astype(int).to_numpy()
-        x_test = test_df[feature_cols].copy()
         y_test = test_df["y"].astype(int).to_numpy()
         inner_key, inner_context, min_inner_cell = inner_stratification_key(train_df, n_splits=inner_folds)
         inner_cv = list(StratifiedKFold(n_splits=inner_folds, shuffle=True, random_state=cfg["seed"] + fold + 30).split(np.zeros(len(train_df)), inner_key))
-        pre = make_preprocessor(mu_cols)
         specs = classifier_specs(seed=cfg["seed"] + fold, y_train=y_train)
 
-        for model_name in models:
-            base_pipe, grid, status = specs[model_name]
-            if status != "available":
-                model_status_rows.append({"fold": fold, "model_name": model_name, "status": status})
-                continue
-            pipe = clone(base_pipe)
-            pipe.steps[0] = ("pre", pre)
-            search = GridSearchCV(
-                estimator=pipe,
-                param_grid=grid,
-                scoring="roc_auc",
-                cv=inner_cv,
-                n_jobs=n_jobs,
-                refit=True,
-                error_score=np.nan,
-            )
-            search.fit(x_train, y_train)
-            best = search.best_estimator_
-            oof_score = cross_val_predict(clone(best), x_train, y_train, cv=inner_cv, method="predict_proba", n_jobs=n_jobs)[:, 1]
-            test_score = score_1d(best, x_test)
-            thresholds = select_thresholds(y_train, oof_score)
-            model_status_rows.append(
-                {
-                    "fold": fold,
-                    "model_name": model_name,
-                    "status": "fit_ok",
-                    "best_params": json.dumps(search.best_params_, sort_keys=True),
-                    "best_inner_auc": float(search.best_score_),
-                    "inner_cv_context": inner_context,
-                    "minimum_inner_stratum_count": int(min_inner_cell),
-                }
-            )
-            for sel in thresholds:
-                thr = float(sel["threshold"])
-                y_pred = (test_score >= thr).astype(int)
-                row = {
-                    "fold": fold,
-                    "model_name": model_name,
-                    "threshold_strategy": sel["threshold_strategy"],
-                    "threshold": thr,
-                    "threshold_selection_context": "true_inner_cv_oof" if sel["threshold_strategy"] != "fixed_0p5" else "fixed_no_selection",
-                    "inner_cv_context": inner_context,
-                    "minimum_inner_stratum_count": int(min_inner_cell),
-                    "best_inner_auc": float(search.best_score_),
-                    "best_params": json.dumps(search.best_params_, sort_keys=True),
-                    **sel,
-                }
-                row.update(binary_metrics(y_test, test_score, y_pred))
-                fold_metric_rows.append(row)
-                confusion_rows.append({k: row[k] for k in ["fold", "model_name", "threshold_strategy", "threshold", "n", "n_cn", "n_ad", "tn", "fp", "fn", "tp", "sensitivity", "specificity", "balanced_accuracy", "f1"]})
-                pred = test_df[
-                    [
-                        "SubjectID",
-                        "tensor_idx",
-                        "ResearchGroup_Mapped",
-                        "Manufacturer",
-                        "Age",
-                        "Sex",
-                        "source_batch",
-                        "source_label",
-                        "tensor_source",
-                    ]
-                ].copy()
-                pred["fold"] = fold
-                pred["model_name"] = model_name
-                pred["threshold_strategy"] = sel["threshold_strategy"]
-                pred["threshold"] = thr
-                pred["y_true"] = y_test
-                pred["y_score"] = test_score
-                pred["y_pred"] = y_pred
-                pred_rows.append(pred)
+        for readout_feature_set in readout_feature_sets:
+            if readout_feature_set == "z_only":
+                feature_cols = mu_cols
+            elif readout_feature_set == "z_plus_sex":
+                feature_cols = mu_cols + ["Sex"]
+            elif readout_feature_set == "z_plus_age_sex":
+                feature_cols = mu_cols + ["Age", "Sex"]
+            else:
+                raise ValueError(f"Unsupported readout_feature_set={readout_feature_set!r}")
+            x_train = train_df[feature_cols].copy()
+            x_test = test_df[feature_cols].copy()
+            pre = make_preprocessor(mu_cols, readout_feature_set=readout_feature_set)
 
-                for manufacturer, sub_idx in pred.groupby("Manufacturer", dropna=False).groups.items():
-                    sub_pred = pred.loc[list(sub_idx)]
-                    sub_row = {
+            for model_name in models:
+                base_pipe, grid, status = specs[model_name]
+                if status != "available":
+                    model_status_rows.append({"fold": fold, "model_name": model_name, "readout_feature_set": readout_feature_set, "status": status})
+                    continue
+                pipe = clone(base_pipe)
+                pipe.steps[0] = ("pre", pre)
+                search = GridSearchCV(
+                    estimator=pipe,
+                    param_grid=grid,
+                    scoring="roc_auc",
+                    cv=inner_cv,
+                    n_jobs=n_jobs,
+                    refit=True,
+                    error_score=np.nan,
+                )
+                search.fit(x_train, y_train)
+                best = search.best_estimator_
+                oof_score = cross_val_predict(clone(best), x_train, y_train, cv=inner_cv, method="predict_proba", n_jobs=n_jobs)[:, 1]
+                test_score = score_1d(best, x_test)
+                thresholds = select_thresholds(y_train, oof_score)
+                model_status_rows.append(
+                    {
                         "fold": fold,
                         "model_name": model_name,
+                        "readout_feature_set": readout_feature_set,
+                        "status": "fit_ok",
+                        "best_params": json.dumps(search.best_params_, sort_keys=True),
+                        "best_inner_auc": float(search.best_score_),
+                        "inner_cv_context": inner_context,
+                        "minimum_inner_stratum_count": int(min_inner_cell),
+                    }
+                )
+                for sel in thresholds:
+                    thr = float(sel["threshold"])
+                    y_pred = (test_score >= thr).astype(int)
+                    row = {
+                        "fold": fold,
+                        "model_name": model_name,
+                        "readout_feature_set": readout_feature_set,
                         "threshold_strategy": sel["threshold_strategy"],
                         "threshold": thr,
-                        "Manufacturer": manufacturer,
+                        "threshold_selection_context": "true_inner_cv_oof" if sel["threshold_strategy"] != "fixed_0p5" else "fixed_no_selection",
+                        "inner_cv_context": inner_context,
+                        "minimum_inner_stratum_count": int(min_inner_cell),
+                        "best_inner_auc": float(search.best_score_),
+                        "best_params": json.dumps(search.best_params_, sort_keys=True),
+                        **sel,
                     }
-                    sub_row.update(binary_metrics(sub_pred["y_true"], sub_pred["y_score"], sub_pred["y_pred"]))
-                    subgroup_rows.append(sub_row)
+                    row.update(binary_metrics(y_test, test_score, y_pred))
+                    fold_metric_rows.append(row)
+                    confusion_rows.append({k: row[k] for k in ["fold", "model_name", "readout_feature_set", "threshold_strategy", "threshold", "n", "n_cn", "n_ad", "tn", "fp", "fn", "tp", "sensitivity", "specificity", "balanced_accuracy", "f1"]})
+                    pred = test_df[
+                        [
+                            "SubjectID",
+                            "tensor_idx",
+                            "ResearchGroup_Mapped",
+                            "Manufacturer",
+                            "Age",
+                            "Sex",
+                            "source_batch",
+                            "source_label",
+                            "tensor_source",
+                        ]
+                    ].copy()
+                    pred["fold"] = fold
+                    pred["model_name"] = model_name
+                    pred["readout_feature_set"] = readout_feature_set
+                    pred["threshold_strategy"] = sel["threshold_strategy"]
+                    pred["threshold"] = thr
+                    pred["y_true"] = y_test
+                    pred["y_score"] = test_score
+                    pred["y_pred"] = y_pred
+                    pred_rows.append(pred)
+
+                    for manufacturer, sub_idx in pred.groupby("Manufacturer", dropna=False).groups.items():
+                        sub_pred = pred.loc[list(sub_idx)]
+                        sub_row = {
+                            "fold": fold,
+                            "model_name": model_name,
+                            "readout_feature_set": readout_feature_set,
+                            "threshold_strategy": sel["threshold_strategy"],
+                            "threshold": thr,
+                            "Manufacturer": manufacturer,
+                        }
+                        sub_row.update(binary_metrics(sub_pred["y_true"], sub_pred["y_score"], sub_pred["y_pred"]))
+                        subgroup_rows.append(sub_row)
 
     return {
         "foldwise_metrics": pd.DataFrame(fold_metric_rows),
@@ -794,16 +964,21 @@ def run_sweep(run_dir: Path, outdir: Path, cfg: Dict[str, Any], n_jobs: int, mod
 def pooled_from_predictions(pred: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
     rows: List[Dict[str, Any]] = []
     conf_rows: List[Dict[str, Any]] = []
-    for (model_name, strategy), sub in pred.groupby(["model_name", "threshold_strategy"], dropna=False):
+    group_cols = ["model_name", "readout_feature_set", "threshold_strategy"]
+    if "readout_feature_set" not in pred.columns:
+        pred = pred.copy()
+        pred["readout_feature_set"] = "z_plus_age_sex"
+    for (model_name, feature_set, strategy), sub in pred.groupby(group_cols, dropna=False):
         row = {
             "model_name": model_name,
+            "readout_feature_set": feature_set,
             "threshold_strategy": strategy,
             "threshold": "fold_specific" if strategy != "fixed_0p5" else 0.5,
         }
         row.update(binary_metrics(sub["y_true"], sub["y_score"], sub["y_pred"]))
         rows.append(row)
-        conf_rows.append({k: row[k] for k in ["model_name", "threshold_strategy", "threshold", "n", "n_cn", "n_ad", "tn", "fp", "fn", "tp", "sensitivity", "specificity", "balanced_accuracy", "f1"]})
-    return pd.DataFrame(rows).sort_values(["threshold_strategy", "model_name"]), pd.DataFrame(conf_rows).sort_values(["threshold_strategy", "model_name"])
+        conf_rows.append({k: row[k] for k in ["model_name", "readout_feature_set", "threshold_strategy", "threshold", "n", "n_cn", "n_ad", "tn", "fp", "fn", "tp", "sensitivity", "specificity", "balanced_accuracy", "f1"]})
+    return pd.DataFrame(rows).sort_values(["threshold_strategy", "readout_feature_set", "model_name"]), pd.DataFrame(conf_rows).sort_values(["threshold_strategy", "readout_feature_set", "model_name"])
 
 
 def compare_against_original(run_dir: Path, sweep_pooled: pd.DataFrame) -> pd.DataFrame:
@@ -933,7 +1108,15 @@ def main() -> int:
     write_json(outdir / "latent_feature_manifest.json", latent_manifest)
 
     requested_models = list(dict.fromkeys(args.models))
-    sweep = run_sweep(run_dir=run_dir, outdir=outdir, cfg=cfg, n_jobs=int(args.n_jobs), models=requested_models)
+    requested_feature_sets = list(dict.fromkeys(args.readout_feature_sets))
+    sweep = run_sweep(
+        run_dir=run_dir,
+        outdir=outdir,
+        cfg=cfg,
+        n_jobs=int(args.n_jobs),
+        models=requested_models,
+        readout_feature_sets=requested_feature_sets,
+    )
     foldwise = sweep["foldwise_metrics"].sort_values(["model_name", "threshold_strategy", "fold"])
     predictions = sweep["predictions"]
     pooled, pooled_conf = pooled_from_predictions(predictions)
@@ -955,6 +1138,7 @@ def main() -> int:
         "run_dir": str(run_dir),
         "output_dir": str(outdir),
         "classifiers_requested": requested_models,
+        "readout_feature_sets": requested_feature_sets,
         "outer_folds": int(cfg.get("outer_folds", 5)),
         "inner_folds": int(cfg.get("inner_folds", 5)),
         "folds_to_run": cfg.get("folds_to_run", list(range(1, int(cfg.get("outer_folds", 5)) + 1))),
@@ -968,7 +1152,12 @@ def main() -> int:
             "num_conv_layers_encoder": int(cfg.get("num_conv_layers_encoder", 4)),
             "encoder_norm_mode": str(cfg.get("encoder_norm_mode", "groupnorm")),
             "vae_dropout_scope": str(cfg.get("vae_dropout_scope", "legacy_all")),
+            "dropout_rate_vae": float(cfg.get("dropout_rate_vae", 0.15)),
+            "encoder_dropout_rate_vae": cfg.get("encoder_dropout_rate_vae"),
+            "decoder_dropout_rate_vae": cfg.get("decoder_dropout_rate_vae"),
             "vae_block_order": str(cfg.get("vae_block_order", "legacy_act_norm")),
+            "vae_conditioning_mode": str(cfg.get("vae_conditioning_mode", "none")),
+            "vae_conditioning_vars": str(cfg.get("vae_conditioning_vars", "none")),
         },
         "threshold_selection": "true_inner_cv_oof_for_selected_hyperparameters",
         "vae_retrained": False,
@@ -985,7 +1174,7 @@ def main() -> int:
     print("vae_retrained=False")
     print("tensor_modified=False")
     print("threshold_selection=true_inner_cv_oof")
-    print(pooled[["model_name", "threshold_strategy", "auc", "pr_auc", "balanced_accuracy", "sensitivity", "specificity", "f1"]].to_string(index=False))
+    print(pooled[["model_name", "readout_feature_set", "threshold_strategy", "auc", "pr_auc", "balanced_accuracy", "sensitivity", "specificity", "f1"]].to_string(index=False))
     return 0
 
 

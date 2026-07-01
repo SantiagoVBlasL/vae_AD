@@ -20,6 +20,8 @@ if str(PROJECT_ROOT / "src") not in sys.path:
 
 from run_vae_clf_ad_inference import (  # noqa: E402
     RECON_LOSS_MODE_CURRENT,
+    RECON_LOSS_MODE_MSE_OFFDIAG_CHANNEL_MEAN_SUM,
+    RECON_LOSS_MODE_MSE_OFFDIAG_CHANNEL_WEIGHTED_SUM,
     RECON_LOSS_MODE_OFFDIAG_CHANNELMEAN,
     vae_loss_function,
     vae_reconstruction_loss,
@@ -42,34 +44,84 @@ def main() -> int:
 
     current_losses = []
     offdiag_losses = []
+    alias_losses = []
     for channels in (1, 2, 3):
         x = torch.zeros(batch_size, channels, n_rois, n_rois)
         recon = torch.ones_like(x)
 
         current_recon = vae_reconstruction_loss(recon, x, mode=RECON_LOSS_MODE_CURRENT).item()
         offdiag_recon = vae_reconstruction_loss(recon, x, mode=RECON_LOSS_MODE_OFFDIAG_CHANNELMEAN).item()
+        alias_recon = vae_reconstruction_loss(recon, x, mode=RECON_LOSS_MODE_MSE_OFFDIAG_CHANNEL_MEAN_SUM).item()
         current_losses.append(current_recon)
         offdiag_losses.append(offdiag_recon)
+        alias_losses.append(alias_recon)
 
         assert_close(current_recon, channels * allpix, name=f"current_C{channels}")
         assert_close(offdiag_recon, offdiag, name=f"offdiag_channelmean_C{channels}")
+        assert_close(alias_recon, offdiag, name=f"mse_offdiag_channel_mean_sum_C{channels}")
+        assert_close(alias_recon, offdiag_recon, name=f"offdiag_alias_equivalence_C{channels}")
 
-        total, recon_loss, kld_loss = vae_loss_function(
+        total, recon_loss, kld_loss, corr_penalty = vae_loss_function(
             recon,
             x,
             mu,
             logvar,
             beta=2.5,
-            recon_loss_mode=RECON_LOSS_MODE_OFFDIAG_CHANNELMEAN,
+            recon_loss_mode=RECON_LOSS_MODE_MSE_OFFDIAG_CHANNEL_MEAN_SUM,
         )
         assert_close(recon_loss.item(), offdiag, name=f"vae_loss_recon_C{channels}")
         assert_close(kld_loss.item(), 0.0, name=f"vae_loss_kld_C{channels}")
+        assert_close(corr_penalty.item(), 0.0, name=f"vae_loss_corr_C{channels}")
         assert_close(total.item(), offdiag, name=f"vae_loss_total_C{channels}")
 
     assert_close(current_losses[1] / current_losses[0], 2.0, name="current_scales_C2_over_C1")
     assert_close(current_losses[2] / current_losses[0], 3.0, name="current_scales_C3_over_C1")
     assert_close(offdiag_losses[1] / offdiag_losses[0], 1.0, name="offdiag_not_linear_C2_over_C1")
     assert_close(offdiag_losses[2] / offdiag_losses[0], 1.0, name="offdiag_not_linear_C3_over_C1")
+    assert_close(alias_losses[1] / alias_losses[0], 1.0, name="alias_not_linear_C2_over_C1")
+    assert_close(alias_losses[2] / alias_losses[0], 1.0, name="alias_not_linear_C3_over_C1")
+
+    x = torch.zeros(batch_size, 3, n_rois, n_rois)
+    recon = torch.ones_like(x)
+    equal_weighted = vae_reconstruction_loss(
+        recon,
+        x,
+        mode=RECON_LOSS_MODE_MSE_OFFDIAG_CHANNEL_WEIGHTED_SUM,
+        channel_weights=[1 / 3, 1 / 3, 1 / 3],
+    ).item()
+    offdiag_mean = vae_reconstruction_loss(
+        recon,
+        x,
+        mode=RECON_LOSS_MODE_MSE_OFFDIAG_CHANNEL_MEAN_SUM,
+    ).item()
+    assert_close(equal_weighted, offdiag_mean, name="weighted_equal_matches_channelmean")
+
+    channel_one_only = vae_reconstruction_loss(
+        recon,
+        x,
+        mode=RECON_LOSS_MODE_MSE_OFFDIAG_CHANNEL_WEIGHTED_SUM,
+        channel_weights=[1.0, 0.0, 0.0],
+    ).item()
+    x_single = x[:, :1]
+    recon_single = recon[:, :1]
+    single_loss = vae_reconstruction_loss(
+        recon_single,
+        x_single,
+        mode=RECON_LOSS_MODE_MSE_OFFDIAG_CHANNEL_MEAN_SUM,
+    ).item()
+    assert_close(channel_one_only, single_loss, name="weighted_one_channel_matches_single_channel")
+
+    try:
+        vae_reconstruction_loss(
+            recon,
+            x,
+            mode=RECON_LOSS_MODE_MSE_OFFDIAG_CHANNEL_WEIGHTED_SUM,
+            channel_weights=[0.5, 0.25, 0.10],
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("weighted loss accepted weights that do not sum to 1")
 
     for activation in ("tanh", "linear", "none"):
         model = ConvolutionalVAE(
@@ -90,6 +142,9 @@ def main() -> int:
     print("Synthetic VAE reconstruction-loss smoke tests passed.")
     print(f"current_losses={current_losses}")
     print(f"offdiag_channelmean_losses={offdiag_losses}")
+    print(f"mse_offdiag_channel_mean_sum_losses={alias_losses}")
+    print(f"weighted_equal_loss={equal_weighted}")
+    print(f"weighted_one_channel_loss={channel_one_only}")
     return 0
 
 

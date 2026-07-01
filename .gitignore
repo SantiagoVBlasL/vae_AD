@@ -154,3 +154,12 @@ __pycache__/
 # Local safety/quarantine
 .quarantine_*/
 safety_snapshots/
+
+# --- Local/private datasets and exploratory notebooks ---
+/data/*.csv
+/external/
+/oasis-scripts/
+/figures_beamer_vae_unsam/
+/notebooks/*.ipynb
+/notebooks/Figures_Nature_recover035_20260625/
+/notebooks/Tables_Nature_recover035_20260625/

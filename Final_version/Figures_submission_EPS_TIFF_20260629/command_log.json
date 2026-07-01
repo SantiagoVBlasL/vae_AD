@@ -1,0 +1,352 @@
+[
+  {
+    "cmd": "pdftops -eps /home/diego/proyectos/vae_AD/results/revision_bspc_2026/final_ad_classification_figure_table_20260622/figure2_ad_classification_performance.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/figure2_ad_classification_performance.eps",
+    "description": "pdftops -eps figure2_ad_classification_performance",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftoppm -r 600 -png -singlefile /home/diego/proyectos/vae_AD/results/revision_bspc_2026/final_ad_classification_figure_table_20260622/figure2_ad_classification_performance.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_figure2_ad_classification_performance",
+    "description": "pdftoppm 600dpi figure2_ad_classification_performance",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "convert -units PixelsPerInch -density 600 /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_figure2_ad_classification_performance.png -compress LZW /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/figure2_ad_classification_performance.tiff",
+    "description": "convert PNG->TIFF LZW figure2_ad_classification_performance",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftops -eps /home/diego/proyectos/vae_AD/results/revision_bspc_2026/final_interpretability_figures_q1_20260624/Figure3_main_signature_q1.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/Figure3_main_signature_q1.eps",
+    "description": "pdftops -eps Figure3_main_signature_q1",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftoppm -r 600 -png -singlefile /home/diego/proyectos/vae_AD/results/revision_bspc_2026/final_interpretability_figures_q1_20260624/Figure3_main_signature_q1.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_Figure3_main_signature_q1",
+    "description": "pdftoppm 600dpi Figure3_main_signature_q1",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "convert -units PixelsPerInch -density 600 /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_Figure3_main_signature_q1.png -compress LZW /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/Figure3_main_signature_q1.tiff",
+    "description": "convert PNG->TIFF LZW Figure3_main_signature_q1",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftops -eps /home/diego/proyectos/vae_AD/results/revision_bspc_2026/final_interpretability_figures_q1_20260624/Figure4_mni_connectome_q1.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/Figure4_mni_connectome_q1.eps",
+    "description": "pdftops -eps Figure4_mni_connectome_q1",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftoppm -r 600 -png -singlefile /home/diego/proyectos/vae_AD/results/revision_bspc_2026/final_interpretability_figures_q1_20260624/Figure4_mni_connectome_q1.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_Figure4_mni_connectome_q1",
+    "description": "pdftoppm 600dpi Figure4_mni_connectome_q1",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "convert -units PixelsPerInch -density 600 /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_Figure4_mni_connectome_q1.png -compress LZW /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/Figure4_mni_connectome_q1.tiff",
+    "description": "convert PNG->TIFF LZW Figure4_mni_connectome_q1",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftops -eps /home/diego/proyectos/vae_AD/notebooks/Figures_Nature_recover035_20260625/fig4A_systems_signature_lowertriangle.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/fig4A_systems_signature_lowertriangle.eps",
+    "description": "pdftops -eps fig4A_systems_signature_lowertriangle",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftoppm -r 600 -png -singlefile /home/diego/proyectos/vae_AD/notebooks/Figures_Nature_recover035_20260625/fig4A_systems_signature_lowertriangle.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_fig4A_systems_signature_lowertriangle",
+    "description": "pdftoppm 600dpi fig4A_systems_signature_lowertriangle",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "convert -units PixelsPerInch -density 600 /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_fig4A_systems_signature_lowertriangle.png -compress LZW /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/fig4A_systems_signature_lowertriangle.tiff",
+    "description": "convert PNG->TIFF LZW fig4A_systems_signature_lowertriangle",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftops -eps /home/diego/proyectos/vae_AD/notebooks/Figures_Nature_recover035_20260625/fig4B_consensus_edges.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/fig4B_consensus_edges.eps",
+    "description": "pdftops -eps fig4B_consensus_edges",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftoppm -r 600 -png -singlefile /home/diego/proyectos/vae_AD/notebooks/Figures_Nature_recover035_20260625/fig4B_consensus_edges.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_fig4B_consensus_edges",
+    "description": "pdftoppm 600dpi fig4B_consensus_edges",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "convert -units PixelsPerInch -density 600 /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_fig4B_consensus_edges.png -compress LZW /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/fig4B_consensus_edges.tiff",
+    "description": "convert PNG->TIFF LZW fig4B_consensus_edges",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftops -eps /home/diego/proyectos/vae_AD/notebooks/Figures_Nature_recover035_20260625/fig4C_right_hemi_dominance.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/fig4C_right_hemi_dominance.eps",
+    "description": "pdftops -eps fig4C_right_hemi_dominance",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftoppm -r 600 -png -singlefile /home/diego/proyectos/vae_AD/notebooks/Figures_Nature_recover035_20260625/fig4C_right_hemi_dominance.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_fig4C_right_hemi_dominance",
+    "description": "pdftoppm 600dpi fig4C_right_hemi_dominance",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "convert -units PixelsPerInch -density 600 /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_fig4C_right_hemi_dominance.png -compress LZW /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/fig4C_right_hemi_dominance.tiff",
+    "description": "convert PNG->TIFF LZW fig4C_right_hemi_dominance",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftops -eps /home/diego/proyectos/vae_AD/notebooks/Figures_Nature_recover035_20260625/fig4D_saliency_vs_effect.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/fig4D_saliency_vs_effect.eps",
+    "description": "pdftops -eps fig4D_saliency_vs_effect",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftoppm -r 600 -png -singlefile /home/diego/proyectos/vae_AD/notebooks/Figures_Nature_recover035_20260625/fig4D_saliency_vs_effect.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_fig4D_saliency_vs_effect",
+    "description": "pdftoppm 600dpi fig4D_saliency_vs_effect",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "convert -units PixelsPerInch -density 600 /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_fig4D_saliency_vs_effect.png -compress LZW /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/fig4D_saliency_vs_effect.tiff",
+    "description": "convert PNG->TIFF LZW fig4D_saliency_vs_effect",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftops -eps /home/diego/proyectos/vae_AD/notebooks/Figures_Nature_recover035_20260625/fig4E_glass_brain_consensus.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/fig4E_glass_brain_consensus.eps",
+    "description": "pdftops -eps fig4E_glass_brain_consensus",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftoppm -r 600 -png -singlefile /home/diego/proyectos/vae_AD/notebooks/Figures_Nature_recover035_20260625/fig4E_glass_brain_consensus.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_fig4E_glass_brain_consensus",
+    "description": "pdftoppm 600dpi fig4E_glass_brain_consensus",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "convert -units PixelsPerInch -density 600 /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_fig4E_glass_brain_consensus.png -compress LZW /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/fig4E_glass_brain_consensus.tiff",
+    "description": "convert PNG->TIFF LZW fig4E_glass_brain_consensus",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftops -eps /home/diego/proyectos/vae_AD/notebooks/Figures_Nature_recover035_20260625/fig4F_nodestrength_signed.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/fig4F_nodestrength_signed.eps",
+    "description": "pdftops -eps fig4F_nodestrength_signed",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftoppm -r 600 -png -singlefile /home/diego/proyectos/vae_AD/notebooks/Figures_Nature_recover035_20260625/fig4F_nodestrength_signed.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_fig4F_nodestrength_signed",
+    "description": "pdftoppm 600dpi fig4F_nodestrength_signed",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "convert -units PixelsPerInch -density 600 /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_fig4F_nodestrength_signed.png -compress LZW /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/fig4F_nodestrength_signed.tiff",
+    "description": "convert PNG->TIFF LZW fig4F_nodestrength_signed",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftops -eps /home/diego/proyectos/vae_AD/results/revision_bspc_2026/channel_sensitivity_figure_package_20260620/Fig_ChannelSensitivity_v2.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/Fig_ChannelSensitivity_v2.eps",
+    "description": "pdftops -eps Fig_ChannelSensitivity_v2",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftoppm -r 600 -png -singlefile /home/diego/proyectos/vae_AD/results/revision_bspc_2026/channel_sensitivity_figure_package_20260620/Fig_ChannelSensitivity_v2.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_Fig_ChannelSensitivity_v2",
+    "description": "pdftoppm 600dpi Fig_ChannelSensitivity_v2",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "convert -units PixelsPerInch -density 600 /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_Fig_ChannelSensitivity_v2.png -compress LZW /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/Fig_ChannelSensitivity_v2.tiff",
+    "description": "convert PNG->TIFF LZW Fig_ChannelSensitivity_v2",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftops -eps /home/diego/proyectos/vae_AD/results/revision_bspc_2026/final_supplementary_figure_refresh_20260625/shap_true_unfrozen_recompute/Sup_S6_A_shap_Age_fold3_LOGREG.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/Sup_S6_A_shap_Age_fold3_LOGREG.eps",
+    "description": "pdftops -eps Sup_S6_A_shap_Age_fold3_LOGREG",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftoppm -r 600 -png -singlefile /home/diego/proyectos/vae_AD/results/revision_bspc_2026/final_supplementary_figure_refresh_20260625/shap_true_unfrozen_recompute/Sup_S6_A_shap_Age_fold3_LOGREG.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_Sup_S6_A_shap_Age_fold3_LOGREG",
+    "description": "pdftoppm 600dpi Sup_S6_A_shap_Age_fold3_LOGREG",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "convert -units PixelsPerInch -density 600 /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_Sup_S6_A_shap_Age_fold3_LOGREG.png -compress LZW /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/Sup_S6_A_shap_Age_fold3_LOGREG.tiff",
+    "description": "convert PNG->TIFF LZW Sup_S6_A_shap_Age_fold3_LOGREG",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftops -eps /home/diego/proyectos/vae_AD/results/revision_bspc_2026/final_supplementary_figure_refresh_20260625/shap_true_unfrozen_recompute/shap_latents_top3_UNFROZEN_fold3.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/shap_latents_top3_UNFROZEN_fold3.eps",
+    "description": "pdftops -eps shap_latents_top3_UNFROZEN_fold3",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftoppm -r 600 -png -singlefile /home/diego/proyectos/vae_AD/results/revision_bspc_2026/final_supplementary_figure_refresh_20260625/shap_true_unfrozen_recompute/shap_latents_top3_UNFROZEN_fold3.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_shap_latents_top3_UNFROZEN_fold3",
+    "description": "pdftoppm 600dpi shap_latents_top3_UNFROZEN_fold3",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "convert -units PixelsPerInch -density 600 /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_shap_latents_top3_UNFROZEN_fold3.png -compress LZW /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/shap_latents_top3_UNFROZEN_fold3.tiff",
+    "description": "convert PNG->TIFF LZW shap_latents_top3_UNFROZEN_fold3",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftops -eps /home/diego/proyectos/vae_AD/results/revision_bspc_2026/final_supplementary_figure_refresh_20260625/fig_YeoChord_AAL3manual.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/fig_YeoChord_AAL3manual.eps",
+    "description": "pdftops -eps fig_YeoChord_AAL3manual",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftoppm -r 600 -png -singlefile /home/diego/proyectos/vae_AD/results/revision_bspc_2026/final_supplementary_figure_refresh_20260625/fig_YeoChord_AAL3manual.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_fig_YeoChord_AAL3manual",
+    "description": "pdftoppm 600dpi fig_YeoChord_AAL3manual",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "convert -units PixelsPerInch -density 600 /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_fig_YeoChord_AAL3manual.png -compress LZW /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/fig_YeoChord_AAL3manual.tiff",
+    "description": "convert PNG->TIFF LZW fig_YeoChord_AAL3manual",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftops -eps /home/diego/proyectos/vae_AD/results/revision_bspc_2026/final_supplementary_figure_refresh_20260625/umap_per_fold_fix/figure2_umap_per_fold_manufacturer_final.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/figure2_umap_per_fold_manufacturer_final.eps",
+    "description": "pdftops -eps figure2_umap_per_fold_manufacturer_final",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftoppm -r 600 -png -singlefile /home/diego/proyectos/vae_AD/results/revision_bspc_2026/final_supplementary_figure_refresh_20260625/umap_per_fold_fix/figure2_umap_per_fold_manufacturer_final.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_figure2_umap_per_fold_manufacturer_final",
+    "description": "pdftoppm 600dpi figure2_umap_per_fold_manufacturer_final",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "convert -units PixelsPerInch -density 600 /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_figure2_umap_per_fold_manufacturer_final.png -compress LZW /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/figure2_umap_per_fold_manufacturer_final.tiff",
+    "description": "convert PNG->TIFF LZW figure2_umap_per_fold_manufacturer_final",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftops -eps /home/diego/proyectos/vae_AD/results/revision_bspc_2026/final_supplementary_figure_refresh_20260625/umap_per_fold_fix/figure2_umap_per_fold_detailed_final.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/figure2_umap_per_fold_detailed_final.eps",
+    "description": "pdftops -eps figure2_umap_per_fold_detailed_final",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftoppm -r 600 -png -singlefile /home/diego/proyectos/vae_AD/results/revision_bspc_2026/final_supplementary_figure_refresh_20260625/umap_per_fold_fix/figure2_umap_per_fold_detailed_final.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_figure2_umap_per_fold_detailed_final",
+    "description": "pdftoppm 600dpi figure2_umap_per_fold_detailed_final",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "convert -units PixelsPerInch -density 600 /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/_tmp_figure2_umap_per_fold_detailed_final.png -compress LZW /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/figure2_umap_per_fold_detailed_final.tiff",
+    "description": "convert PNG->TIFF LZW figure2_umap_per_fold_detailed_final",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftoppm -r 150 -png -singlefile /home/diego/proyectos/vae_AD/results/revision_bspc_2026/final_ad_classification_figure_table_20260622/figure2_ad_classification_performance.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/preview_fig3_classification_performance",
+    "description": "preview fig3_classification_performance",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftoppm -r 150 -png -singlefile /home/diego/proyectos/vae_AD/results/revision_bspc_2026/final_interpretability_figures_q1_20260624/Figure3_main_signature_q1.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/preview_fig3_interp_signature_q1",
+    "description": "preview fig3_interp_signature_q1",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftoppm -r 150 -png -singlefile /home/diego/proyectos/vae_AD/results/revision_bspc_2026/final_interpretability_figures_q1_20260624/Figure4_mni_connectome_q1.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/preview_fig4_mni_connectome_q1",
+    "description": "preview fig4_mni_connectome_q1",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftoppm -r 150 -png -singlefile /home/diego/proyectos/vae_AD/notebooks/Figures_Nature_recover035_20260625/fig4B_consensus_edges.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/preview_fig4B_consensus_edges_notebook",
+    "description": "preview fig4B_consensus_edges_notebook",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "cmd": "pdftoppm -r 150 -png -singlefile /home/diego/proyectos/vae_AD/notebooks/Figures_Nature_recover035_20260625/fig4A_systems_signature_lowertriangle.pdf /home/diego/proyectos/vae_AD/Final_version/Figures_submission_EPS_TIFF_20260629/preview_fig4A_systems_sig_notebook",
+    "description": "preview fig4A_systems_sig_notebook",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+]

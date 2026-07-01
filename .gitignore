@@ -127,3 +127,30 @@ logs/
 
 # Local generated repo snapshots
 results/revision_bspc_2026/repo_state_snapshots/
+
+# --- ADNI / VAE heavy artifacts ---
+*.npz
+*.npy
+*.pt
+*.pth
+*.ckpt
+*.joblib
+*.pkl
+*.h5
+*.nii
+*.nii.gz
+*.mat
+
+# Submission raster/vector heavy exports
+*.tiff
+*.tif
+*.eps
+*.zip
+
+# Python / notebooks
+__pycache__/
+.ipynb_checkpoints/
+
+# Local safety/quarantine
+.quarantine_*/
+safety_snapshots/

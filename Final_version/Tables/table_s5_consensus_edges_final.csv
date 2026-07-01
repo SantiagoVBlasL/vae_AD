@@ -1,0 +1,9 @@
+edge_id,roi_i,roi_j,network_i,network_j,replication_frequency,mean_signed_direction,direction,K
+1,Cerebelum_7b_L,Cerebelum_Crus2_L,Background/NonCortical,Background/NonCortical,0.6,0.6,Pro-AD,200
+2,Cerebelum_7b_R,Parietal_Inf_L,Control_B,Background/NonCortical,0.6,0.6,Pro-AD,200
+3,Frontal_Sup_2_R,Frontal_Sup_Medial_L,Control_B,DefaultMode_VentralMedial,0.6,0.6,Pro-AD,200
+4,Frontal_Sup_2_R,Frontal_Sup_Medial_R,Control_B,DefaultMode_VentralMedial,0.6,0.6,Pro-AD,200
+5,OFCant_R,OFClat_R,Limbic_B_OFC,Limbic_B_OFC,0.6,0.6,Pro-AD,200
+6,Parietal_Sup_R,Precuneus_R,DorsalAttention_A,DefaultMode_DorsalMedial,0.8,-0.8,Pro-CN,200
+7,Postcentral_L,Postcentral_R,Somatomotor_A,Somatomotor_A,0.6,0.6,Pro-AD,200
+8,Postcentral_L,Precentral_R,Somatomotor_A,Somatomotor_A,0.6,-0.6,Pro-CN,200

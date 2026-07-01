@@ -1,0 +1,38 @@
+% Table S5 — Consensus Edges (Final, K=200)
+% Model: recover035_latent384_beta3p75_T80_h10000_p560_full5x5
+% N consensus edges: 8 (replaces former 11-edge Table S5)
+% Criterion: replication_frequency >= 0.6, |mean_signed_direction| >= 0.6, K=200
+% Mean Jaccard (Top-200): 0.066
+\begin{table}[H]
+\centering
+\caption{\textbf{Supplementary Table S5 — Consensus connectivity edges (K=200).}
+Edges retained by strict cross-fold replication: replication frequency $\pi_{ij}\!\ge\!0.6$
+(at least 3 of 5 folds) and signed-direction consistency $|\bar{s}_{ij}|\!\ge\!0.6$, at $K\!=\!200$.
+Mean pairwise Jaccard of Top-200 lists across folds: 0.066.
+Direction: Pro-AD (positive $\bar{s}_{ij}$) = higher connectivity contributes to AD probability;
+Pro-CN (negative $\bar{s}_{ij}$) = higher connectivity contributes to CN probability.
+Network labels from the Yeo-17 functional atlas.}
+\label{tab:consensus_edges_s5}
+\small
+\begin{tabular}{@{}clllccr@{}}
+\toprule
+\textbf{\#} & \textbf{ROI $i$} & \textbf{ROI $j$} & \textbf{Network $i$ / Network $j$} & \textbf{Rep.\ freq.} & $\bar{s}_{ij}$ & \textbf{Dir.} \\
+\midrule
+1 & Cerebelum\_7b\_L & Cerebelum\_Crus2\_L & BG/NC -- BG/NC & 0.6 & $+0.6$ & Pro-AD \\
+2 & Cerebelum\_7b\_R & Parietal\_Inf\_L   & Control\_B -- BG/NC & 0.6 & $+0.6$ & Pro-AD \\
+3 & Frontal\_Sup\_2\_R & Frontal\_Sup\_Medial\_L & Control\_B -- DMN\_VM & 0.6 & $+0.6$ & Pro-AD \\
+4 & Frontal\_Sup\_2\_R & Frontal\_Sup\_Medial\_R & Control\_B -- DMN\_VM & 0.6 & $+0.6$ & Pro-AD \\
+5 & OFCant\_R & OFClat\_R & Limbic\_OFC -- Limbic\_OFC & 0.6 & $+0.6$ & Pro-AD \\
+6 & \textbf{Parietal\_Sup\_R} & \textbf{Precuneus\_R} & \textbf{DorsAttn\_A -- DMN\_DM} & \textbf{0.8} & $\mathbf{-0.8}$ & \textbf{Pro-CN} \\
+7 & Postcentral\_L & Postcentral\_R & SomMot\_A -- SomMot\_A & 0.6 & $+0.6$ & Pro-AD \\
+8 & Postcentral\_L & Precentral\_R  & SomMot\_A -- SomMot\_A & 0.6 & $-0.6$ & Pro-CN \\
+\bottomrule
+\end{tabular}
+\vspace{0.4em}
+
+\noindent\footnotesize
+BG/NC = Background/NonCortical; DMN\_VM = DefaultMode\_VentralMedial;
+DMN\_DM = DefaultMode\_DorsalMedial; DorsAttn\_A = DorsalAttention\_A;
+SomMot\_A = Somatomotor\_A; Limbic\_OFC = Limbic\_B\_OFC.
+Edge 6 (bold) has the highest replication frequency (0.8; present in 4/5 folds).
+\end{table}

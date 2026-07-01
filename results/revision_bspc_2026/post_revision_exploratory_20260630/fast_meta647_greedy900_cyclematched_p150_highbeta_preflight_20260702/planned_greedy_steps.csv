@@ -1,0 +1,14 @@
+phase,runtime_step,candidate_set_template,candidate_count_this_phase,dynamic_dependency
+step0_single,0,[0],7,none
+step0_single,0,[1],7,none
+step0_single,0,[2],7,none
+step0_single,0,[3],7,none
+step0_single,0,[4],7,none
+step0_single,0,[5],7,none
+step0_single,0,[6],7,none
+greedy_addition,1,best_step0 + each_remaining_channel,6,best selected at step 0
+greedy_addition,2,best_step1 + each_remaining_channel,5,best selected at step 1
+greedy_addition,3,best_step2 + each_remaining_channel,4,best selected at step 2
+greedy_addition,4,best_step3 + each_remaining_channel,3,best selected at step 3
+greedy_addition,5,best_step4 + each_remaining_channel,2,best selected at step 4
+greedy_addition,6,best_step5 + each_remaining_channel,1,best selected at step 5

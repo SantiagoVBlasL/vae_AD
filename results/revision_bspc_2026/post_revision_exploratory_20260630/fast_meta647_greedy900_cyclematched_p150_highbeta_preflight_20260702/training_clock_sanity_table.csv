@@ -1,0 +1,2 @@
+epochs,beta_cycles,beta_cycle_length,cyclical_beta_ratio_increase,ramp_length,beta_vae,high_beta_threshold,early_stopping_patience_vae,patience_in_beta_cycles,lr_scheduler_T0,T0_in_beta_cycles
+900,12,75,0.4,30,2.5,2.375,150,2.0,30,0.4

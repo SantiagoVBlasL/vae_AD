@@ -1,0 +1,12 @@
+parameter,previous_greedy900,p150_highbeta,changed
+epochs_vae,900,900,False
+beta_vae,2.5,2.5,False
+cyclical_beta_n_cycles,12,12,False
+beta_cycle_length,75,75,False
+lr_scheduler_T0,30,30,False
+early_stopping_patience_vae,30,150,True
+patience_in_beta_cycles,0.4,2.0,True
+vae_checkpoint_select_high_beta_only,False,True,True
+high_beta_threshold,guardrail only,2.375,True
+dynamic_greedy_policy,all7 greedy no_early_stop,all7 greedy no_early_stop,False
+forced_sentinels,"[5,2,1]; [5,2]; [1,0,2]","[5,2,1]; [5,2]; [1,0,2]",False

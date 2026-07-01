@@ -44,6 +44,7 @@ else:
 import argparse
 import copy
 import gc
+import json
 import subprocess
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -611,6 +612,13 @@ def train_and_evaluate_pipeline(
         best_epoch       = 0
         epochs_no_improv = 0
         best_state: Optional[Dict] = None
+        best_any_beta_val_loss = float("inf")
+        best_any_beta_epoch = 0
+        best_any_beta_value = float("nan")
+        best_high_beta_val_loss = float("inf")
+        best_high_beta_epoch = 0
+        best_high_beta_value = float("nan")
+        high_beta_threshold = 0.95 * float(args.beta_vae)
 
         history_data: Dict[str, List] = {
             "train_loss": [], "train_recon": [], "train_kld": [],
@@ -711,7 +719,27 @@ def train_and_evaluate_pipeline(
                     epochs_no_improv = 0
 
                 # Checkpoint based on β-max consistent loss (parity with inference)
-                if avg_val_loss_bmax < best_val_loss and not np.isnan(avg_val_loss_bmax):
+                valid_modelsel = not np.isnan(avg_val_loss_bmax)
+                high_beta_eligible = current_beta >= high_beta_threshold
+                if valid_modelsel and avg_val_loss_bmax < best_any_beta_val_loss:
+                    best_any_beta_val_loss = avg_val_loss_bmax
+                    best_any_beta_epoch = epoch + 1
+                    best_any_beta_value = float(current_beta)
+                if valid_modelsel and high_beta_eligible and avg_val_loss_bmax < best_high_beta_val_loss:
+                    best_high_beta_val_loss = avg_val_loss_bmax
+                    best_high_beta_epoch = epoch + 1
+                    best_high_beta_value = float(current_beta)
+
+                if args.vae_checkpoint_select_high_beta_only:
+                    checkpoint_improved = (
+                        valid_modelsel
+                        and high_beta_eligible
+                        and avg_val_loss_bmax < best_val_loss
+                    )
+                else:
+                    checkpoint_improved = valid_modelsel and avg_val_loss_bmax < best_val_loss
+
+                if checkpoint_improved:
                     best_val_loss    = avg_val_loss_bmax
                     best_epoch       = epoch + 1
                     epochs_no_improv = 0
@@ -747,6 +775,14 @@ def train_and_evaluate_pipeline(
             if args.vae_abort_if_val_split_fails:
                 raise RuntimeError(msg)
             logger.warning(msg)
+        if args.vae_checkpoint_select_high_beta_only and best_high_beta_epoch <= 0:
+            msg = (
+                f"{fold_tag} no eligible high-beta checkpoint was found. "
+                f"Required beta >= {high_beta_threshold:.4f}; "
+                f"best_any_beta_epoch={best_any_beta_epoch}, "
+                f"beta_at_best_any_beta={best_any_beta_value:.4f}."
+            )
+            raise RuntimeError(msg)
         if best_epoch > 0 and history_data.get("beta"):
             best_beta = float(history_data["beta"][best_epoch - 1])
             min_beta_for_checkpoint = 0.95 * float(args.beta_vae)
@@ -766,6 +802,58 @@ def train_and_evaluate_pipeline(
                 val_kld_peak = np.asarray(history_data["val_kld"], dtype=float)[peak_mask]
                 ratio = np.nanmedian(val_kld_peak / np.maximum(train_kld_peak, 1e-12))
                 logger.info(f"  {fold_tag} beta-peak median val_kld/train_kld={ratio:.4f}")
+
+        def _epoch_phase(epoch_1based: int) -> Tuple[Optional[int], str]:
+            if epoch_1based <= 0 or args.cyclical_beta_n_cycles <= 0:
+                return None, "unknown"
+            cycle_len = float(args.epochs_vae) / float(args.cyclical_beta_n_cycles)
+            ramp_len = cycle_len * float(args.cyclical_beta_ratio_increase)
+            epoch0 = float(epoch_1based - 1)
+            cycle_id = int(epoch0 // cycle_len) + 1
+            epoch_in_cycle = epoch0 - float(cycle_id - 1) * cycle_len
+            phase = "ramp" if epoch_in_cycle < ramp_len else "high_beta_plateau"
+            return cycle_id, phase
+
+        selected_cycle_id, selected_phase = _epoch_phase(best_epoch)
+        checkpoint_selection_summary = {
+            "fold": int(fold_idx + 1),
+            "checkpoint_select_high_beta_only": bool(args.vae_checkpoint_select_high_beta_only),
+            "high_beta_threshold": float(high_beta_threshold),
+            "best_any_beta_epoch": int(best_any_beta_epoch),
+            "best_any_beta_val_loss_modelsel": (
+                float(best_any_beta_val_loss) if np.isfinite(best_any_beta_val_loss) else None
+            ),
+            "beta_at_best_any_beta": (
+                float(best_any_beta_value) if np.isfinite(best_any_beta_value) else None
+            ),
+            "best_high_beta_epoch": int(best_high_beta_epoch),
+            "best_high_beta_val_loss_modelsel": (
+                float(best_high_beta_val_loss) if np.isfinite(best_high_beta_val_loss) else None
+            ),
+            "beta_at_best_high_beta": (
+                float(best_high_beta_value) if np.isfinite(best_high_beta_value) else None
+            ),
+            "selected_epoch": int(best_epoch),
+            "selected_epoch_beta": (
+                float(history_data["beta"][best_epoch - 1])
+                if best_epoch > 0 and history_data.get("beta") else None
+            ),
+            "selected_epoch_cycle_id": selected_cycle_id,
+            "selected_epoch_phase": selected_phase,
+        }
+        with open(fold_out / f"vae_checkpoint_selection_summary_fold_{fold_idx + 1}.json", "w") as fh:
+            json.dump(checkpoint_selection_summary, fh, indent=2)
+        pd.DataFrame([checkpoint_selection_summary]).to_csv(
+            fold_out / f"vae_checkpoint_selection_summary_fold_{fold_idx + 1}.csv",
+            index=False,
+        )
+        logger.info(
+            f"  {fold_tag} Checkpoint selection summary: "
+            f"selected_epoch={best_epoch}, selected_beta="
+            f"{checkpoint_selection_summary['selected_epoch_beta']}, "
+            f"best_any_epoch={best_any_beta_epoch}, "
+            f"best_high_beta_epoch={best_high_beta_epoch}."
+        )
 
         # ── Load best VAE checkpoint ───────────────────────────────────────────
         if best_state:
@@ -1149,6 +1237,15 @@ if __name__ == "__main__":
         help=(
             "Abort when the VAE internal validation split cannot be created or when "
             "validation/checkpoint guardrails fail. Recommended for supplementary FAST evidence."
+        ),
+    )
+    g.add_argument(
+        "--vae_checkpoint_select_high_beta_only",
+        action="store_true",
+        default=False,
+        help=(
+            "Select the best VAE checkpoint only among epochs where beta >= 0.95*beta_vae. "
+            "Default off preserves historical beta-max checkpoint behavior."
         ),
     )
     g.add_argument("--early_stopping_patience_vae", type=int, default=20)

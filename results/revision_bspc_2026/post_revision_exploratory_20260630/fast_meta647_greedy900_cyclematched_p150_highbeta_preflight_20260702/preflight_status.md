@@ -1,0 +1,14 @@
+# Preflight Status
+
+| check                              | status   | detail                                                                                                                                                                              |
+|:-----------------------------------|:---------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| tensor exists                      | PASS     | /media/diego/Datos/vae_AD_data/revision_bspc_2026/adni_expanded_v5_1_batch20260514b_no_pybandpass/subject_tensors/GLOBAL_TENSOR_ADNI_expanded_v5_1_batch20260514b_no_pybandpass.npz |
+| metadata exists                    | PASS     | /home/diego/proyectos/vae_AD/results/revision_bspc_2026/adni_035_metadata_rescue_preflight/patched_metadata_candidate.csv                                                           |
+| tensor shape                       | PASS     | (648, 7, 131, 131)                                                                                                                                                                  |
+| metadata-valid N                   | PASS     | 647                                                                                                                                                                                 |
+| CN/MCI/AD                          | PASS     | CN=300, MCI=250, AD=97                                                                                                                                                              |
+| proposed output root absent        | PASS     | /media/diego/Datos/vae_AD_results/revision_bspc_2026/post_revision_exploratory_20260630/fast_meta647_greedy900_cyclematched_p150_highbeta_20260702                                  |
+| proposed output root on media      | PASS     | /media/diego/Datos/vae_AD_results/revision_bspc_2026/post_revision_exploratory_20260630/fast_meta647_greedy900_cyclematched_p150_highbeta_20260702                                  |
+| high-beta flag in child runner     | PASS     | --vae_checkpoint_select_high_beta_only                                                                                                                                              |
+| high-beta flag forwarded by parent | PASS     | scripts/ablation_canales.py                                                                                                                                                         |
+| training launched                  | PASS     | no                                                                                                                                                                                  |

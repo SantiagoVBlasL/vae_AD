@@ -1,0 +1,4 @@
+channels,channels_python,channel_names,rationale,planned_output_subdir
+5 2 1,"[5, 2, 1]",DistanceCorr + MI_KNN + Pearson_Full,old FAST300 best greedy set,sentinel_ch521
+5 2,"[5, 2]",DistanceCorr + MI_KNN,old FAST300 best pair,sentinel_ch52
+1 0 2,"[1, 0, 2]",Pearson_Full + OMST + MI_KNN,final promoted FULL channel set,sentinel_ch102

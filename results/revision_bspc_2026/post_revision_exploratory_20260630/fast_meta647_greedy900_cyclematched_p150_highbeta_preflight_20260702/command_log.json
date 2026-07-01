@@ -1,0 +1,44 @@
+{
+  "timestamp_utc": "2026-07-01T20:28:52.759752+00:00",
+  "cwd": "/home/diego/proyectos/vae_AD",
+  "did_train": false,
+  "did_infer": false,
+  "did_modify_tensors": false,
+  "did_modify_metadata": false,
+  "did_modify_manuscript": false,
+  "modified_scripts": [
+    "scripts/run_vae_clf_ad_ablation.py",
+    "scripts/ablation_canales.py"
+  ],
+  "py_compile_expected": [
+    "scripts/run_vae_clf_ad_ablation.py",
+    "scripts/ablation_canales.py",
+    "scripts/revision_bspc_2026/prepare_fast_meta647_greedy900_p150_highbeta_preflight_20260702.py"
+  ],
+  "output_files": [
+    "README.md",
+    "checkpoint_selection_policy.md",
+    "config_comparison_previous_vs_p150_highbeta.csv",
+    "dryrun_argument_validation_commands.txt",
+    "forced_sentinel_candidates.csv",
+    "guarded_launch.sh",
+    "launch_greedy900_p150_highbeta_full.sh",
+    "launch_greedy900_p150_highbeta_sentinel_only.sh",
+    "patch_summary.md",
+    "planned_greedy_steps.csv",
+    "preflight_status.md",
+    "resource_estimate.md",
+    "training_clock_sanity_table.csv"
+  ],
+  "commands_run": [
+    "/home/diego/anaconda3/envs/vae_ad/bin/python -m py_compile scripts/run_vae_clf_ad_ablation.py scripts/ablation_canales.py scripts/revision_bspc_2026/prepare_fast_meta647_greedy900_p150_highbeta_preflight_20260702.py",
+    "/home/diego/anaconda3/envs/vae_ad/bin/python scripts/revision_bspc_2026/prepare_fast_meta647_greedy900_p150_highbeta_preflight_20260702.py"
+  ],
+  "validation": {
+    "py_compile_run_vae_clf_ad_ablation": "PASS",
+    "py_compile_ablation_canales": "PASS",
+    "py_compile_preflight_generator": "PASS",
+    "training_launched": false,
+    "output_root_absent_at_preflight": true
+  }
+}

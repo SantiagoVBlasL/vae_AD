@@ -381,6 +381,8 @@ def _run_ablation_once(
         cmd.append("--save_vae_training_history")
     if cfg.get("vae_abort_if_val_split_fails", False):
         cmd.append("--vae_abort_if_val_split_fails")
+    if cfg.get("vae_checkpoint_select_high_beta_only", False):
+        cmd.append("--vae_checkpoint_select_high_beta_only")
     if cfg.get("strict_metadata_intersection", True):
         cmd.append("--strict_metadata_intersection")
     else:
@@ -591,6 +593,8 @@ def main() -> None:
                    help="Pass --save_vae_training_history to ablation script.")
     p.add_argument("--vae_abort_if_val_split_fails", action="store_true",
                    help="Pass strict VAE validation split/checkpoint guard to ablation script.")
+    p.add_argument("--vae_checkpoint_select_high_beta_only", action="store_true",
+                   help="Pass high-beta-only VAE checkpoint selection to ablation script.")
     p.add_argument(
         "--strict_metadata_intersection",
         action=argparse.BooleanOptionalAction,
@@ -652,6 +656,7 @@ def main() -> None:
         "save_fold_artefacts":         args.save_fold_artefacts,
         "save_vae_training_history":   args.save_vae_training_history,
         "vae_abort_if_val_split_fails": args.vae_abort_if_val_split_fails,
+        "vae_checkpoint_select_high_beta_only": args.vae_checkpoint_select_high_beta_only,
         "strict_metadata_intersection": args.strict_metadata_intersection,
     }
 

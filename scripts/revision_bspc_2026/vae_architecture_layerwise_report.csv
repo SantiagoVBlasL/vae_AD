@@ -1,0 +1,14 @@
+Module Name,Input Shape,Output Shape,Number of Parameters,Normalization,Activation,Dropout Location,Dropout Type
+Encoder Conv 1 (Conv2d),3x131x131,16x64x64,2368,GroupNorm (16 groups),GELU,After Activation/Norm,Dropout2d (p=0.15)
+Encoder Conv 2 (Conv2d),16x64x64,32x31x31,12832,GroupNorm (16 groups),GELU,After Activation/Norm,Dropout2d (p=0.15)
+Encoder Conv 3 (Conv2d),32x31x31,64x15x15,51264,GroupNorm (16 groups),GELU,After Activation/Norm,Dropout2d (p=0.15)
+Encoder Conv 4 (Conv2d),64x15x15,128x8x8,73856,GroupNorm (16 groups),GELU,After Activation/Norm,Dropout2d (p=0.15)
+Encoder FC Intermediate,8192,2048,16783360,BatchNorm1d,GELU,After Activation/Norm,Dropout (p=0.15)
+Encoder FC Mu,2048,256,524544,None,None,None,None
+Encoder FC LogVar,2048,256,524544,None,None,None,None
+Decoder FC Intermediate,256,2048,530432,BatchNorm1d,GELU,After Activation/Norm,Dropout (p=0.15)
+Decoder FC To Conv,2048,8192,16785408,None,None,None,None
+Decoder Conv 1 (ConvTranspose2d),128x8x8,64x15x15,73792,GroupNorm (16 groups),GELU,After Activation/Norm,Dropout2d (p=0.15)
+Decoder Conv 2 (ConvTranspose2d),64x15x15,32x31x31,51232,GroupNorm (16 groups),GELU,After Activation/Norm,Dropout2d (p=0.15)
+Decoder Conv 3 (ConvTranspose2d),32x31x31,16x64x64,12816,GroupNorm (16 groups),GELU,After Activation/Norm,Dropout2d (p=0.15)
+Decoder Conv 4 (ConvTranspose2d),16x64x64,3x131x131,2355,None,Tanh,None,None

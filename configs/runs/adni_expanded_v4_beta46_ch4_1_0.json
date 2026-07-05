@@ -1,0 +1,96 @@
+{
+  "run_name": "adni_expanded_v4_beta46_ch4_1_0",
+  "description": "BSPC 2026 ADNI expanded v4 controlled beta experiment. Same full configuration as completed V4 [4,1,0] beta=2.5 run, except beta_vae=4.6 to strengthen latent bottleneck regularization.",
+  "python_executable": "/home/diego/anaconda3/envs/vae_ad/bin/python",
+  "channel_names_master_in_tensor_order": [
+    "Pearson_OMST_GCE_Signed_Weighted",
+    "Pearson_Full_FisherZ_Signed",
+    "MI_KNN_Symmetric",
+    "dFC_AbsDiffMean",
+    "dFC_StdDev",
+    "DistanceCorr",
+    "Granger_F_lag1"
+  ],
+  "selected_channel_names": [
+    "dFC_StdDev",
+    "Pearson_Full_FisherZ_Signed",
+    "Pearson_OMST_GCE_Signed_Weighted"
+  ],
+  "paths": {
+    "training_script": "scripts/run_vae_clf_ad_inference.py",
+    "expanded_dataset_dir": "data/revision_bspc_2026/adni_expanded_v4_all_available",
+    "global_tensor_path": "data/revision_bspc_2026/adni_expanded_v4_all_available/GLOBAL_TENSOR_ADNI_expanded_v4_all_available.npz",
+    "metadata_path": "data/revision_bspc_2026/adni_expanded_v4_all_available/subject_metadata_adni_expanded_v4_all_available.csv",
+    "output_dir": "results/revision_bspc_2026/adni_expanded_v4_beta46_ch4_1_0",
+    "big_disk_output_dir": "/media/diego/Datos/vae_AD_results/revision_bspc_2026/adni_expanded_v4_beta46_ch4_1_0",
+    "baseline_v4_model_dir": "results/revision_bspc_2026/adni_expanded_v4_beta25_static3",
+    "v4_ch4_1_config": "configs/runs/adni_expanded_v4_beta25_ch4_1.json"
+  },
+  "parameters": {
+    "channels_to_use": [
+      4,
+      1,
+      0
+    ],
+    "classifier_types": [
+      "logreg",
+      "svm"
+    ],
+    "classifier_stratify_cols": [
+      "Sex"
+    ],
+    "classifier_calibrate": true,
+    "classifier_use_class_weight": true,
+    "latent_features_type": "mu",
+    "gridsearch_scoring": "roc_auc",
+    "outer_folds": 5,
+    "inner_folds": 5,
+    "repeated_outer_folds_n_repeats": 1,
+    "num_conv_layers_encoder": 4,
+    "decoder_type": "convtranspose",
+    "epochs_vae": 2560,
+    "vae_val_split_ratio": 0.2,
+    "early_stopping_patience_vae": 240,
+    "cyclical_beta_n_cycles": 32,
+    "cyclical_beta_ratio_increase": 0.4,
+    "beta_vae": 4.6,
+    "dropout_rate_vae": 0.15,
+    "latent_dim": 256,
+    "batch_size": 64,
+    "lr_vae": 0.0001,
+    "lr_scheduler_type": "cosine_warm",
+    "lr_scheduler_T0": 80,
+    "lr_scheduler_eta_min": 5e-07,
+    "lr_scheduler_patience_vae": 15,
+    "weight_decay_vae": 5e-07,
+    "vae_final_activation": "tanh",
+    "intermediate_fc_dim_vae": "quarter",
+    "use_layernorm_vae_fc": false,
+    "n_jobs_gridsearch": 8,
+    "metadata_features": [
+      "Age",
+      "Sex"
+    ],
+    "norm_mode": "zscore_offdiag",
+    "seed": 42,
+    "num_workers": 4,
+    "log_interval_epochs_vae": 10,
+    "save_fold_artefacts": true,
+    "save_vae_training_history": true,
+    "qc_analyze_distributions": true,
+    "qc_check_scanner_leakage": true,
+    "qc_rate_distortion": true,
+    "qc_latent_information": true,
+    "qc_mi_n_neighbors": 3,
+    "qc_mi_top_k": 10,
+    "qc_rd_log_base": 2.0,
+    "qc_tc_ridge": 1e-06,
+    "qc_var_eps_active": 0.0001,
+    "use_optuna_pruner": false,
+    "use_smote": false,
+    "tune_sampler_params": false,
+    "mlp_classifier_hidden_layers": "64,16",
+    "n_iter_logreg": 300,
+    "n_iter_svm": 300
+  }
+}

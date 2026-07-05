@@ -112,6 +112,11 @@ DEFAULT_CHANNEL_NAMES: List[str] = [
     "Granger_F_lag1",
 ]
 
+# Reconstruction loss mode constants (ported from run_vae_clf_ad_inference.py)
+RECON_LOSS_MODE_CURRENT             = "mse_sum_batchmean_current"
+RECON_LOSS_MODE_OFFDIAG_CHANNELMEAN = "offdiag_channelmean_sum"
+RECON_LOSS_MODES = (RECON_LOSS_MODE_CURRENT, RECON_LOSS_MODE_OFFDIAG_CHANNELMEAN)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper functions (parity with run_vae_clf_ad_inference.py)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -265,17 +270,49 @@ def _get_score_1d(estimator, X) -> np.ndarray:
     return np.asarray(estimator.predict(X)).astype(float).ravel()
 
 
+def _offdiag_mask_for_tensor(x: torch.Tensor) -> torch.Tensor:
+    """Off-diagonal boolean mask for [B,C,H,W] square matrices.  Ported from run_vae_clf_ad_inference.py."""
+    if x.ndim != 4:
+        raise ValueError(f"Expected 4D tensor [B,C,H,W], got shape={tuple(x.shape)}")
+    if x.shape[-1] != x.shape[-2]:
+        raise ValueError(f"Expected square matrices, got shape={tuple(x.shape)}")
+    n_rois = int(x.shape[-1])
+    return ~torch.eye(n_rois, dtype=torch.bool, device=x.device)
+
+
+def vae_reconstruction_loss(
+    recon_x: torch.Tensor,
+    x: torch.Tensor,
+    mode: str = RECON_LOSS_MODE_CURRENT,
+) -> torch.Tensor:
+    """Reconstruction loss with selectable formula.  Ported from run_vae_clf_ad_inference.py.
+
+    - mse_sum_batchmean_current: historical default (sum over all elements / batch_size).
+    - offdiag_channelmean_sum: sum off-diagonal squared errors per channel, then mean over
+      channels and batch; scale is channel-count-invariant.
+    """
+    if mode == RECON_LOSS_MODE_CURRENT:
+        return nn.functional.mse_loss(recon_x, x, reduction='sum') / x.shape[0]
+    if mode == RECON_LOSS_MODE_OFFDIAG_CHANNELMEAN:
+        offdiag_mask = _offdiag_mask_for_tensor(x)
+        diff2 = (recon_x - x).pow(2)
+        per_subject_channel_sum = diff2[:, :, offdiag_mask].sum(dim=-1)
+        return per_subject_channel_sum.mean(dim=1).mean()
+    raise ValueError(f"Unknown recon_loss_mode={mode!r}. Valid modes: {RECON_LOSS_MODES}")
+
+
 def vae_loss_function(
     recon_x: torch.Tensor,
     x: torch.Tensor,
     mu: torch.Tensor,
     logvar: torch.Tensor,
     beta: float = 1.0,
+    recon_loss_mode: str = RECON_LOSS_MODE_CURRENT,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """MSE reconstruction loss + β·KLD.  Returns (total, recon.detach(), kld.detach())."""
+    """Reconstruction loss + β·KLD.  Returns (total, recon.detach(), kld.detach())."""
     recon_x = recon_x.float(); x = x.float()
     mu = mu.float();           logvar = logvar.float()
-    recon_loss = nn.functional.mse_loss(recon_x, x, reduction="sum") / x.shape[0]
+    recon_loss = vae_reconstruction_loss(recon_x, x, mode=recon_loss_mode)
     kld_loss   = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1).mean()
     total_loss = recon_loss + beta * kld_loss
     return total_loss, recon_loss.detach(), kld_loss.detach()
@@ -606,7 +643,8 @@ def train_and_evaluate_pipeline(
         # ── VAE training loop ──────────────────────────────────────────────────
         logger.info(
             f"  {fold_tag} Training VAE "
-            f"(decoder={args.decoder_type}, encoder_layers={args.num_conv_layers_encoder})..."
+            f"(decoder={args.decoder_type}, encoder_layers={args.num_conv_layers_encoder}, "
+            f"recon_loss_mode={args.recon_loss_mode})..."
         )
         best_val_loss    = float("inf")
         best_epoch       = 0
@@ -644,7 +682,8 @@ def train_and_evaluate_pipeline(
                 with autocast(enabled=(device.type == "cuda")):
                     recon_b, mu, logvar, _ = vae_fold_k(data)
                     loss, recon, kld = vae_loss_function(
-                        recon_b, data, mu, logvar, beta=current_beta
+                        recon_b, data, mu, logvar, beta=current_beta,
+                        recon_loss_mode=args.recon_loss_mode,
                     )
                 scaler.scale(loss).backward()
                 scaler.step(optimizer_vae)
@@ -681,7 +720,8 @@ def train_and_evaluate_pipeline(
                             val_data = val_data.to(device)
                             rv, mv, lv, _ = vae_fold_k(val_data)
                             vl_cb, vr, vkld = vae_loss_function(
-                                rv, val_data, mv, lv, beta=current_beta
+                                rv, val_data, mv, lv, beta=current_beta,
+                                recon_loss_mode=args.recon_loss_mode,
                             )
                             n_vb = val_data.size(0)
                             ep_val_cb   += vl_cb.item() * n_vb
@@ -1246,6 +1286,17 @@ if __name__ == "__main__":
         help=(
             "Select the best VAE checkpoint only among epochs where beta >= 0.95*beta_vae. "
             "Default off preserves historical beta-max checkpoint behavior."
+        ),
+    )
+    g.add_argument(
+        "--recon_loss_mode",
+        type=str,
+        default=RECON_LOSS_MODE_CURRENT,
+        choices=list(RECON_LOSS_MODES),
+        help=(
+            "Reconstruction loss formula. Default 'mse_sum_batchmean_current' preserves "
+            "historical behavior. 'offdiag_channelmean_sum' averages off-diagonal squared "
+            "errors across channels, giving a channel-count-invariant scale."
         ),
     )
     g.add_argument("--early_stopping_patience_vae", type=int, default=20)

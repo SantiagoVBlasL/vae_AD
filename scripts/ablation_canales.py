@@ -367,6 +367,7 @@ def _run_ablation_once(
         "--norm_mode",                       str(cfg.get("norm_mode", "zscore_offdiag")),
         "--seed",                            str(cfg.get("seed", 42)),
         "--vae_val_split_ratio",             str(cfg.get("vae_val_split_ratio", 0.2)),
+        "--recon_loss_mode",                 str(cfg.get("recon_loss_mode", "mse_sum_batchmean_current")),
 
         # ── Channel subset ────────────────────────────────────────────────────
         "--channels_to_use",
@@ -596,6 +597,13 @@ def main() -> None:
     p.add_argument("--vae_checkpoint_select_high_beta_only", action="store_true",
                    help="Pass high-beta-only VAE checkpoint selection to ablation script.")
     p.add_argument(
+        "--recon_loss_mode",
+        type=str,
+        default="mse_sum_batchmean_current",
+        choices=["mse_sum_batchmean_current", "offdiag_channelmean_sum"],
+        help="Reconstruction loss mode forwarded to ablation script. Default preserves historical behavior.",
+    )
+    p.add_argument(
         "--strict_metadata_intersection",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -657,6 +665,7 @@ def main() -> None:
         "save_vae_training_history":   args.save_vae_training_history,
         "vae_abort_if_val_split_fails": args.vae_abort_if_val_split_fails,
         "vae_checkpoint_select_high_beta_only": args.vae_checkpoint_select_high_beta_only,
+        "recon_loss_mode":                     args.recon_loss_mode,
         "strict_metadata_intersection": args.strict_metadata_intersection,
     }
 

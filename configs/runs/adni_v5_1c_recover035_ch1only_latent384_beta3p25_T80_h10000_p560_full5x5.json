@@ -1,0 +1,117 @@
+{
+  "run_name": "ch1only_latent384_beta3p25_T80_h10000_p560_full5x5",
+  "description": "Targeted ch1-only FULL 5x5 follow-up based strictly on recover035_ch1only_latent384_beta3p75_T80_h10000_p560_full5x5. Allowed scientific diff: beta_vae 3.75 -> 3.25. All other tensor, metadata, channel, architecture, dropout, optimizer, scheduler, fold, classifier, metadata-feature, QC, and reconstruction-loss settings are preserved. Preflight only; real training requires explicit confirmation.",
+  "python_executable": "/home/diego/anaconda3/envs/vae_ad/bin/python",
+  "channel_names_master_in_tensor_order": [
+    "Pearson_OMST_GCE_Signed_Weighted",
+    "Pearson_Full_FisherZ_Signed",
+    "MI_KNN_Symmetric",
+    "dFC_AbsDiffMean",
+    "dFC_StdDev",
+    "DistanceCorr",
+    "Granger_F_lag1"
+  ],
+  "selected_channel_names": [
+    "Pearson_Full_FisherZ_Signed"
+  ],
+  "paths": {
+    "training_script": "scripts/run_vae_clf_ad_inference.py",
+    "global_tensor_path": "/media/diego/Datos/vae_AD_data/revision_bspc_2026/adni_expanded_v5_1_batch20260514b_no_pybandpass/subject_tensors/GLOBAL_TENSOR_ADNI_expanded_v5_1_batch20260514b_no_pybandpass.npz",
+    "metadata_path": "/home/diego/proyectos/vae_AD/results/revision_bspc_2026/adni_035_metadata_rescue_preflight/patched_metadata_candidate.csv",
+    "output_dir": "results/revision_bspc_2026/ch1only_latent384_beta3p25_T80_h10000_p560_full5x5",
+    "big_disk_output_dir": "/media/diego/Datos/vae_AD_results/revision_bspc_2026/ch1only_latent384_beta3p25_T80_h10000_p560_full5x5",
+    "split_preview_csv": "results/revision_bspc_2026/ch1only_latent384_beta3p25_T80_h10000_p560_full5x5_split_preview.csv",
+    "split_preview_summary_csv": "results/revision_bspc_2026/ch1only_latent384_beta3p25_T80_h10000_p560_full5x5_split_preview_summary.csv"
+  },
+  "split_strategy": {
+    "classifier_outer": [
+      "ResearchGroup_Mapped",
+      "Manufacturer"
+    ],
+    "classifier_inner": [
+      "ResearchGroup_Mapped",
+      "Manufacturer"
+    ],
+    "vae_internal_val": [
+      "ResearchGroup_Mapped",
+      "Manufacturer"
+    ],
+    "metadata_covariates_only": [
+      "Age",
+      "Sex"
+    ],
+    "sex_primary_stratifier": false
+  },
+  "parameters": {
+    "channels_to_use": [
+      1
+    ],
+    "classifier_types": [
+      "logreg",
+      "svm"
+    ],
+    "classifier_stratify_cols": [
+      "Manufacturer"
+    ],
+    "vae_stratify_cols": [
+      "Manufacturer"
+    ],
+    "classifier_calibrate": true,
+    "classifier_use_class_weight": true,
+    "latent_features_type": "mu",
+    "gridsearch_scoring": "roc_auc",
+    "outer_folds": 5,
+    "inner_folds": 5,
+    "repeated_outer_folds_n_repeats": 1,
+    "num_conv_layers_encoder": 4,
+    "decoder_type": "convtranspose",
+    "epochs_vae": 10000,
+    "vae_val_split_ratio": 0.2,
+    "early_stopping_patience_vae": 560,
+    "cyclical_beta_n_cycles": 125,
+    "cyclical_beta_ratio_increase": 0.4,
+    "beta_vae": 3.25,
+    "dropout_rate_vae": 0.15,
+    "vae_dropout_scope": "legacy_all",
+    "vae_block_order": "legacy_act_norm",
+    "latent_dim": 384,
+    "batch_size": 64,
+    "lr_vae": 0.0001,
+    "lr_scheduler_type": "cosine_warm",
+    "lr_scheduler_T0": 80,
+    "lr_scheduler_eta_min": 5e-07,
+    "lr_scheduler_patience_vae": 15,
+    "weight_decay_vae": 5e-07,
+    "vae_final_activation": "tanh",
+    "intermediate_fc_dim_vae": "quarter",
+    "use_layernorm_vae_fc": false,
+    "n_jobs_gridsearch": 8,
+    "metadata_features": [
+      "Age",
+      "Sex"
+    ],
+    "norm_mode": "zscore_offdiag",
+    "recon_loss_mode": "mse_sum_batchmean_current",
+    "seed": 42,
+    "num_workers": 4,
+    "log_interval_epochs_vae": 10,
+    "save_fold_artefacts": true,
+    "save_vae_training_history": true,
+    "qc_analyze_distributions": true,
+    "qc_check_scanner_leakage": true,
+    "qc_rate_distortion": true,
+    "qc_latent_information": true,
+    "qc_mi_n_neighbors": 3,
+    "qc_mi_top_k": 10,
+    "qc_rd_log_base": 2.0,
+    "qc_tc_ridge": 1e-06,
+    "qc_var_eps_active": 0.0001,
+    "use_optuna_pruner": false,
+    "use_smote": false,
+    "vae_train_sampler_strategy": "none",
+    "tune_sampler_params": false,
+    "mlp_classifier_hidden_layers": "64,16",
+    "n_iter_logreg": 500,
+    "n_iter_svm": 500
+  }
+}

@@ -1,0 +1,6 @@
+manufacturer,scanner_model,raw_tr_value,raw_tr_units,normalized_tr_seconds,raw_volumes,analysed_volumes,raw_volumes_per_selected_run,selected_qc_runs,source_batch,missing_metadata,missing_tr,missing_raw_volumes,n_observations
+Siemens,TrioTim,2.2,seconds,2.2,328,328,164;164,2,new,False,False,False,118
+Siemens,TrioTim,2.2,seconds,2.2,328,328,164;164,2,pilot,False,False,False,59
+Siemens,TrioTim,2.2,seconds,2.2,164,164,164,1,new,False,False,False,1
+Siemens,TrioTim,2.2,seconds,2.2,656,656,164;164;164;164,4,new,False,False,False,1
+Siemens,TrioTim,2.2,seconds,2.2,164,164,164,1,pilot,False,False,False,1

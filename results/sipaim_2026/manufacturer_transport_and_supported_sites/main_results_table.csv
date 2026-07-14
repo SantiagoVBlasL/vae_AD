@@ -1,0 +1,8 @@
+result,n_or_folds,primary_value,secondary_value,metric
+manufacturer latent decodability,5,0.7275555555555555,0.09039488131471402,"balanced accuracy mean, SD"
+site latent decodability,5,0.1527257702472756,0.031953989119817575,"balanced accuracy mean, SD"
+locked ADNI diagnostic performance,397,0.7951546391752577,0.573933621970083,"ROC-AUC, PR-AUC"
+fold-wise input-ComBat performance,397,0.7780756013745704,0.5499357661948471,"ROC-AUC, PR-AUC"
+leave-one-site-out summary,2,0.6975824175824177,0.5774668387168387,"mean supported-site ROC-AUC, PR-AUC"
+OASIS external performance,180,0.6477777777777778,0.6678376160483931,"runwise164 one-row-per-subject ROC-AUC, PR-AUC"
+ADNI-OASIS Wasserstein distance,5,0.34888601472827735,11.624956298928065,"mean sliced W, mean Gaussian Bures-W"

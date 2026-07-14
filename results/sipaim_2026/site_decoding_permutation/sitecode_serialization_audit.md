@@ -1,0 +1,18 @@
+# SiteCode Serialization Audit
+
+| file                                           | column      |   n_nonmissing | unique_values_preview                           | all_three_char_strings   |   short_numeric_values_n |   bad_values_n | bad_values_preview   | corrected_copy_written   |
+|:-----------------------------------------------|:------------|---------------:|:------------------------------------------------|:-------------------------|-------------------------:|---------------:|:---------------------|:-------------------------|
+| figure_data/leave_one_site_out_performance.csv | target_site |              2 | 035;130                                         | True                     |                        0 |              0 |                      | False                    |
+| figure_data/site_performance_forest.csv        | SiteCode    |              4 | 027;032;035;130                                 | True                     |                        0 |              0 |                      | False                    |
+| figure_data/site_sample_composition.csv        | SiteCode    |             20 | 002;003;006;011;013;014;018;019;021;027;031;032 | True                     |                        0 |              0 |                      | False                    |
+| leave_one_site_out_metrics.csv                 | target_site |              2 | 035;130                                         | True                     |                        0 |              0 |                      | False                    |
+| site_by_diagnosis.csv                          | SiteCode    |             50 | 002;003;005;006;009;010;011;012;013;014;018;019 | True                     |                        0 |              0 |                      | False                    |
+| site_by_manufacturer.csv                       | SiteCode    |             50 | 002;003;005;006;009;010;011;012;013;014;018;019 | True                     |                        0 |              0 |                      | False                    |
+| site_by_outer_fold.csv                         | SiteCode    |             44 | 002;003;005;006;009;010;011;012;013;014;018;019 | True                     |                        0 |              0 |                      | False                    |
+| site_composition.csv                           | SiteCode    |             50 | 002;003;005;006;009;010;011;012;013;014;018;019 | True                     |                        0 |              0 |                      | False                    |
+| site_error_association.csv                     | SiteCode    |            162 | 002;003;005;006;009;010;011;012;013;014;018;019 | True                     |                        0 |              0 |                      | False                    |
+| site_exclusion_table.csv                       | SiteCode    |             50 | 002;003;005;006;009;010;011;012;013;014;018;019 | True                     |                        0 |              0 |                      | False                    |
+| site_specific_diagnostic_metrics.csv           | SiteCode    |             44 | 002;003;005;006;009;010;011;012;013;014;018;019 | True                     |                        0 |              0 |                      | False                    |
+| sitecode_validation.csv                        | SiteCode    |            647 | 002;003;005;006;009;010;011;012;013;014;018;019 | True                     |                        0 |              0 |                      | False                    |
+
+All checked `SiteCode`/`target_site` values are serialized as three-character strings; no corrected copies were required.

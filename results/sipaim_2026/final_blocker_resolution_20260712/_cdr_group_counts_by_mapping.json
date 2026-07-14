@@ -1,0 +1,62 @@
+[
+  {
+    "mapping": "A_nearest_180d",
+    "cdr_group": "CDR 0",
+    "n": 81
+  },
+  {
+    "mapping": "A_nearest_180d",
+    "cdr_group": "CDR 0.5",
+    "n": 51
+  },
+  {
+    "mapping": "A_nearest_180d",
+    "cdr_group": "CDR >= 1 (high severity)",
+    "n": 37
+  },
+  {
+    "mapping": "A_nearest_180d",
+    "cdr_group": "unmapped",
+    "n": 11
+  },
+  {
+    "mapping": "B_nearest_365d",
+    "cdr_group": "CDR 0",
+    "n": 89
+  },
+  {
+    "mapping": "B_nearest_365d",
+    "cdr_group": "CDR 0.5",
+    "n": 52
+  },
+  {
+    "mapping": "B_nearest_365d",
+    "cdr_group": "CDR >= 1 (high severity)",
+    "n": 39
+  },
+  {
+    "mapping": "B_nearest_365d",
+    "cdr_group": "unmapped",
+    "n": 0
+  },
+  {
+    "mapping": "C_latest_before_365d",
+    "cdr_group": "CDR 0",
+    "n": 88
+  },
+  {
+    "mapping": "C_latest_before_365d",
+    "cdr_group": "CDR 0.5",
+    "n": 55
+  },
+  {
+    "mapping": "C_latest_before_365d",
+    "cdr_group": "CDR >= 1 (high severity)",
+    "n": 33
+  },
+  {
+    "mapping": "C_latest_before_365d",
+    "cdr_group": "unmapped",
+    "n": 4
+  }
+]

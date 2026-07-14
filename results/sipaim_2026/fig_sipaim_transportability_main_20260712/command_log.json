@@ -1,0 +1,64 @@
+{
+  "task_title": "SIPAIM manuscript figure: fig_sipaim_transportability_main",
+  "git_hash_at_run": "dc77722464cdcdb61f7603e069af2e15103d7aea",
+  "date": "2026-07-12",
+  "script": "scripts/sipaim_2026/generate_fig_sipaim_transportability_main_20260712.py",
+  "guardrails": {
+    "no_training": true,
+    "no_vae_inference": true,
+    "no_model_selection": true,
+    "no_threshold_optimization": true,
+    "no_manuscript_file_read": true,
+    "no_manuscript_edit": true,
+    "no_commit": true
+  },
+  "sources_used": {
+    "panel_A": [
+      "results/sipaim_2026/manufacturer_decoding/cleanrepro_manufacturer_decoding.csv",
+      "results/sipaim_2026/clean_foldwise_combat_training_and_audit/cleanrepro_downstream_foldwise_metrics.csv",
+      "results/sipaim_2026/clean_foldwise_combat_training_and_audit/cleanrepro_paired_bootstrap_vs_locked.csv",
+      "results/revision_bspc_2026/recover035_latent384_beta3p75_stageB_oof_score_calibration/calib_foldwise_metrics.csv"
+    ],
+    "panel_B": [
+      "results/sipaim_2026/standardized_locked_space_geometry_20260712/standardized_shared_geometry.csv"
+    ],
+    "panel_C": [
+      "results/sipaim_2026/final_blocker_resolution_20260712/oasis_cdr_scan_alignment.csv",
+      "results/sipaim_2026/final_blocker_resolution_20260712/cdr_temporal_sensitivity_metrics.csv"
+    ]
+  },
+  "sources_explicitly_excluded": {
+    "path": "results/sipaim_2026/final_evidence_package_20260712/diagnostic_axis_geometry.csv",
+    "reason": "not the canonical geometry source per this task's instruction; not read"
+  },
+  "arm_exclusion_panel_B": {
+    "excluded": "previous_adni_fitted_siemens_combat",
+    "reason": "independently retrained VAE encoder; does not share the locked model's latent coordinate system",
+    "enforced_by": "hard assertion in the script that the loaded arm set equals exactly {locked_frozen_transfer, external_dataset_combat_adni_reference, external_dataset_combat_no_reference}"
+  },
+  "in_script_validation_assertions": [
+    "manufacturer BACC locked mean == 0.666 (tol 0.001)",
+    "manufacturer BACC input-ComBat mean == 0.440 (tol 0.001)",
+    "ADNI OOF ROC-AUC locked pooled == 0.795 (tol 0.001)",
+    "ADNI OOF ROC-AUC input-ComBat pooled == 0.749 (tol 0.001)",
+    "Panel B arm set == {locked_frozen_transfer, external_dataset_combat_adni_reference, external_dataset_combat_no_reference}",
+    "Panel B marginal-shift CI bounds are both negative before absolute-value flip",
+    "Panel C n_mapped == 169, n_cdr0 == 81, n_cdr05 == 51, n_cdr_ge1 == 37 (all cross-checked against cdr_temporal_sensitivity_metrics.csv)"
+  ],
+  "cdr_severity_labeling_policy": "CDR treated as a severity indicator throughout; CDR>=1 group is labeled 'CDR>=1' or 'high severity', never 'AD' or 'Alzheimer's disease'; stated explicitly in the figure footer and caption",
+  "technical_validation": {
+    "pdf_page_size_pt": "515.52 x 241.2 (= 7.16 x 3.35 in)",
+    "pdfimages_raster_count": 0,
+    "pdffonts_embedded_subsetted": ["DejaVuSans", "DejaVuSans-Bold", "DejaVuSans-Oblique"],
+    "png_size_px": "4296 x 2010",
+    "png_dpi": 600.0
+  },
+  "outputs": [
+    "fig_sipaim_transportability_main.pdf",
+    "fig_sipaim_transportability_main.png",
+    "fig_sipaim_transportability_main_data.csv",
+    "fig_sipaim_transportability_caption.md",
+    "figure_validation.md",
+    "command_log.json"
+  ]
+}

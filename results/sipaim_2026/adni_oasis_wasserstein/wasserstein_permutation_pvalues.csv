@@ -1,0 +1,11 @@
+fold,comparison,observed_pca10_w1_mean,perm_null_mean,perm_null_sd,n_perm,p_value,p_resolution,permutation_type
+1,manufacturer_GE_vs_Philips,1.5669215340359823,0.7739478184202868,0.09574465927758738,1000,0.001,0.001,shuffle_manufacturer_labels_test_fold_GE_Philips_subset
+1,ADNI_trainDev_vs_OASIS,0.9610633074980706,0.32323955907355395,0.03675601760028173,1000,0.001,0.001,shuffle_cohort_labels_pooled_ADNI_trainDev_OASIS
+2,manufacturer_GE_vs_Philips,1.3114723759091262,0.8052141950336842,0.09867725449579709,1000,0.001,0.001,shuffle_manufacturer_labels_test_fold_GE_Philips_subset
+2,ADNI_trainDev_vs_OASIS,0.9752745145545528,0.33224174246333393,0.040625285842436756,1000,0.001,0.001,shuffle_cohort_labels_pooled_ADNI_trainDev_OASIS
+3,manufacturer_GE_vs_Philips,1.1698204115031985,0.8225947322180504,0.09613568796670355,1000,0.001,0.001,shuffle_manufacturer_labels_test_fold_GE_Philips_subset
+3,ADNI_trainDev_vs_OASIS,1.031765616452954,0.33253470102610105,0.03783540757428096,1000,0.001,0.001,shuffle_cohort_labels_pooled_ADNI_trainDev_OASIS
+4,manufacturer_GE_vs_Philips,1.3230201520314488,0.8441911548164418,0.10614170063345518,1000,0.001,0.001,shuffle_manufacturer_labels_test_fold_GE_Philips_subset
+4,ADNI_trainDev_vs_OASIS,0.9521466181549423,0.3357702390297059,0.038573844688794094,1000,0.001,0.001,shuffle_cohort_labels_pooled_ADNI_trainDev_OASIS
+5,manufacturer_GE_vs_Philips,1.1984471183599148,0.7644903120477605,0.09397582757511982,1000,0.001,0.001,shuffle_manufacturer_labels_test_fold_GE_Philips_subset
+5,ADNI_trainDev_vs_OASIS,0.9949252226214993,0.3241337547435049,0.03699889089657224,1000,0.001,0.001,shuffle_cohort_labels_pooled_ADNI_trainDev_OASIS

@@ -1,0 +1,2 @@
+arm,scope,n,n_cn,n_ad,roc_auc,pr_auc,balanced_accuracy,sensitivity,specificity,f1,brier_score,tn,fp,fn,tp
+clean_foldwise_input_combat,pooled_outer_fold_predictions,397,300,97,0.7492783505154639,0.532701369454467,0.695979381443299,0.7319587628865979,0.66,0.5259259259259259,0.24319826031626718,198,102,26,71

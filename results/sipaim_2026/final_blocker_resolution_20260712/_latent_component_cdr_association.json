@@ -1,0 +1,11 @@
+{
+  "n": 180,
+  "spearman_rho_latent_component_vs_cdr": 0.29658835569011854,
+  "spearman_pvalue_latent_component_vs_cdr": 5.282306397636057e-05,
+  "partial_spearman_rho_latent_component_vs_cdr_age_sex_adj": 0.258998071031432,
+  "partial_spearman_pvalue_latent_component_vs_cdr_age_sex_adj": 0.00044690579975862753,
+  "spearman_rho_full_reconstructed_logit_vs_cdr": 0.29398711564145796,
+  "spearman_pvalue_full_reconstructed_logit_vs_cdr": 6.18462633956404e-05,
+  "spearman_rho_age_component_vs_cdr": -0.1635801573555371,
+  "spearman_pvalue_age_component_vs_cdr": 0.028223206025352252
+}

@@ -1,0 +1,38 @@
+{
+  "A_exact_canonical_cohort_mapping": {
+    "status": "PASS",
+    "detail": "180/180 canonical ensemble rows; 180 unique subjects; manifest merges both=180."
+  },
+  "B_metadata_TR_coverage": {
+    "status": "PASS",
+    "detail": "180/180 observations have selected-run TR matched from OASIS3_MR_json.csv."
+  },
+  "C_raw_volume_coverage": {
+    "status": "PASS",
+    "detail": "180/180 observations have selected-run timepoint totals from immutable run-selection manifests; OASIS3_MR_json.csv has no volume column."
+  },
+  "D_analysed_volume_count_traced": {
+    "status": "PASS",
+    "detail": "Primary runwise164 analysed timepoints traced through tensor manifests, run manifests, NPZ tensor shape, and source code line references."
+  },
+  "E_operation_producing_164_established": {
+    "status": "PASS",
+    "detail": "Selected run manifests show 164 timepoints per selected run; primary runwise164 code does not crop these runs and computes per-run connectomes before averaging."
+  },
+  "F_140_point_sensitivity_established": {
+    "status": "PASS",
+    "detail": "140TR sensitivity scripts/manifests/NPZ show first 140 time points per selected run, then run-level connectome averaging."
+  },
+  "G_acquisition_and_analysed_claims_separated": {
+    "status": "PASS",
+    "detail": "Reports separate JSON sidecar acquisition fields, selected-run timepoint manifests, primary tensor construction, and 140TR sensitivity construction."
+  },
+  "H_no_diagnosis_label_used_to_select_more_favourable_protocol_subset": {
+    "status": "PASS",
+    "detail": "This audit performs no protocol subset selection, model selection, threshold selection, or score recalibration. The canonical cohort is label-balanced as an external evaluation cohort, not reselected here."
+  },
+  "I_no_existing_artifact_modified": {
+    "status": "PASS",
+    "detail": "Script writes only the new audit directory and this script; source artifacts are read-only inputs."
+  }
+}

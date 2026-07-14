@@ -1,0 +1,49 @@
+{
+  "task_title": "Canonical shared-coordinate diagnostic-centroid geometry consolidation",
+  "git_hash_at_run": "dc77722464cdcdb61f7603e069af2e15103d7aea",
+  "date": "2026-07-12",
+  "script": "scripts/sipaim_2026/build_canonical_shared_locked_geometry_20260712.py",
+  "guardrails": {
+    "no_training": true,
+    "no_inference": true,
+    "no_procrustes_alignment": true,
+    "no_manuscript_file_read": true,
+    "no_manuscript_edit": true,
+    "no_commit": true,
+    "did_not_use_final_evidence_package_20260712_diagnostic_axis_geometry": true,
+    "did_not_overwrite_final_blocker_resolution_20260712": true,
+    "did_not_overwrite_final_evidence_package_20260712": true
+  },
+  "source_used": {
+    "geometry": "results/sipaim_2026/final_blocker_resolution_20260712/diagnostic_centroid_geometry_revised.csv",
+    "paired_deltas": "results/sipaim_2026/final_blocker_resolution_20260712/_paired_fold_deltas_vs_locked.csv"
+  },
+  "source_excluded": "results/sipaim_2026/final_evidence_package_20260712/diagnostic_axis_geometry.csv (not read)",
+  "arm_filter": {
+    "kept": ["locked_frozen_transfer", "external_dataset_combat_adni_reference", "external_dataset_combat_no_reference (secondary)"],
+    "excluded": "previous_adni_fitted_siemens_combat",
+    "exclusion_reason": "separately retrained VAE encoder -- OASIS latents for this arm do not share the locked model's frozen latent coordinate system that the ADNI discriminant axis and centroid were fit in; see geometry_source_reconciliation.md"
+  },
+  "validity_note_applied": "Dataset-ComBat arms and locked transfer share the frozen VAE coordinates; the separately retrained Siemens-ComBat VAE does not.",
+  "verification": {
+    "method": "byte-for-byte comparison of every numeric column (and the per_fold_deltas array column) in every kept output row against the corresponding source row",
+    "result": "EXACT_MATCH",
+    "n_mismatches": 0,
+    "detail_file": "_verification_result.json"
+  },
+  "row_counts": {
+    "source_geometry_rows": 4,
+    "output_geometry_rows": 3,
+    "source_paired_delta_rows": 21,
+    "output_paired_delta_rows": 14
+  },
+  "outputs": [
+    "canonical_shared_locked_geometry.csv",
+    "canonical_shared_locked_geometry.md",
+    "canonical_geometry_paired_deltas.csv",
+    "canonical_geometry_paired_deltas.md",
+    "geometry_source_reconciliation.md",
+    "command_log.json",
+    "_verification_result.json"
+  ]
+}
